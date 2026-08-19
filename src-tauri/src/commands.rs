@@ -28,6 +28,16 @@ pub async fn profiles_create(
 }
 
 #[tauri::command]
+pub async fn profiles_update(
+    state: State<'_, AppState>,
+    profile_id: String,
+    input: UpdateProfileInput,
+) -> Result<ModpackProfile, String> {
+    validate_uuid(&profile_id)?;
+    state.profiles.update(&profile_id, input).await.message()
+}
+
+#[tauri::command]
 pub async fn profiles_remove(state: State<'_, AppState>, profile_id: String) -> Result<(), String> {
     validate_uuid(&profile_id)?;
     state.profiles.remove(&profile_id).await.message()

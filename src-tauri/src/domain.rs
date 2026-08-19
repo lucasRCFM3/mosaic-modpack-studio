@@ -390,6 +390,13 @@ pub struct CreateProfileInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct UpdateProfileInput {
+    pub name: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SaveSettingsInput {
     pub curse_forge_api_key: Option<String>,
     pub clear_curse_forge_api_key: Option<bool>,

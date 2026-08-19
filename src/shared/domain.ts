@@ -182,6 +182,11 @@ export interface CreateProfileInput {
   instancePath?: string;
 }
 
+export interface UpdateProfileInput {
+  name: string;
+  description: string;
+}
+
 export interface SaveSettingsInput {
   curseForgeApiKey?: string;
   clearCurseForgeApiKey?: boolean;

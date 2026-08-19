@@ -59,11 +59,7 @@ impl ProfileService {
 
     pub async fn create(&self, input: CreateProfileInput) -> AppResult<ModpackProfile> {
         let name = input.name.trim();
-        if name.is_empty() || name.chars().count() > 80 {
-            return Err(AppError::Message(
-                "O nome deve ter entre 1 e 80 caracteres.".into(),
-            ));
-        }
+        validate_profile_metadata(name, input.description.as_deref().unwrap_or_default())?;
         validate_target(&input.target)?;
         let id = Uuid::new_v4().to_string();
         let path = input
@@ -91,6 +87,25 @@ impl ProfileService {
             .update(|database| database.profiles.push(profile.clone()))
             .await?;
         Ok(profile)
+    }
+
+    pub async fn update(&self, id: &str, input: UpdateProfileInput) -> AppResult<ModpackProfile> {
+        let name = input.name.trim();
+        let description = input.description.trim();
+        validate_profile_metadata(name, description)?;
+        self.store
+            .update(|database| {
+                let profile = database
+                    .profiles
+                    .iter_mut()
+                    .find(|profile| profile.id == id)
+                    .ok_or_else(|| AppError::Message("Perfil não encontrado.".into()))?;
+                profile.name = name.into();
+                profile.description = description.into();
+                profile.updated_at = Utc::now().to_rfc3339();
+                Ok(profile.clone())
+            })
+            .await?
     }
 
     pub async fn remove(&self, id: &str) -> AppResult<()> {
@@ -165,7 +180,7 @@ impl ProfileService {
         }
         let lockfile = Lockfile {
             format_version: 1,
-            generated_by: "Mosaic Modpack Studio 0.2.0",
+            generated_by: "Mosaic Modpack Studio 0.2.1",
             generated_at: Utc::now().to_rfc3339(),
             profile: self.get(id).await?,
         };
@@ -188,6 +203,20 @@ fn validate_target(target: &ProfileTarget) -> AppResult<()> {
     }
     Ok(())
 }
+
+fn validate_profile_metadata(name: &str, description: &str) -> AppResult<()> {
+    if name.trim().is_empty() || name.chars().count() > 80 {
+        return Err(AppError::Message(
+            "O nome deve ter entre 1 e 80 caracteres.".into(),
+        ));
+    }
+    if description.chars().count() > 300 {
+        return Err(AppError::Message(
+            "A descrição deve ter no máximo 300 caracteres.".into(),
+        ));
+    }
+    Ok(())
+}
 fn safe_folder_name(value: &str) -> String {
     let result: String = value
         .to_lowercase()
@@ -205,5 +234,17 @@ fn safe_folder_name(value: &str) -> String {
         "modpack".into()
     } else {
         trimmed.into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_profile_metadata;
+
+    #[test]
+    fn validates_editable_profile_metadata() {
+        assert!(validate_profile_metadata("Meu modpack", "Uma descrição").is_ok());
+        assert!(validate_profile_metadata("   ", "").is_err());
+        assert!(validate_profile_metadata("Pack", &"a".repeat(301)).is_err());
     }
 }

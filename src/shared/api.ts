@@ -9,6 +9,7 @@ import type {
   ResolutionPlan,
   SaveSettingsInput,
   SearchFilters,
+  UpdateProfileInput,
 } from './domain';
 
 export interface MosaicApi {
@@ -19,6 +20,7 @@ export interface MosaicApi {
   profiles: {
     list(): Promise<ModpackProfile[]>;
     create(input: CreateProfileInput): Promise<ModpackProfile>;
+    update(profileId: string, input: UpdateProfileInput): Promise<ModpackProfile>;
     remove(profileId: string): Promise<void>;
     chooseFolder(): Promise<string | undefined>;
     export(profileId: string): Promise<string | undefined>;

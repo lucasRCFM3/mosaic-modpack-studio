@@ -246,8 +246,10 @@ select option { background: #1a1f18; color: #e7ebe1; }
 .terms-note p { margin: 0; color: #968d66; font-size: 8px; line-height: 1.5; }
 .terms-note strong { color: #c8bd80; display: block; margin-bottom: 2px; }
 .setting-field { display: flex; flex-direction: column; gap: 7px; color: #747d6f; font-size: 7px; font-weight: 800; letter-spacing: .1em; }
-.setting-field input[type=password], .form-grid input { height: 37px; border: 1px solid #30372d; border-radius: 7px; background: #1b2019; color: #dfe4da; padding: 0 10px; outline: 0; font-size: 10px; letter-spacing: normal; }
-.setting-field input:focus, .form-grid input:focus { border-color: #637849; }
+.setting-field input[type=password], .form-grid input, .form-grid textarea { border: 1px solid #30372d; border-radius: 7px; background: #1b2019; color: #dfe4da; padding: 0 10px; outline: 0; font-size: 10px; letter-spacing: normal; }
+.setting-field input[type=password], .form-grid input { height: 37px; }
+.form-grid textarea { min-height: 96px; padding-block: 10px; resize: vertical; font: inherit; line-height: 1.5; }
+.setting-field input:focus, .form-grid input:focus, .form-grid textarea:focus { border-color: #637849; }
 .setting-field small { color: #5f675c; font-size: 7px; letter-spacing: 0; font-weight: 500; line-height: 1.45; }
 .check-row { display: flex; align-items: center; gap: 7px; margin: 12px 0; color: #81897b; font-size: 8px; }
 .danger-check { color: #c37d74; }
@@ -340,6 +342,7 @@ select option { background: #1a1f18; color: #e7ebe1; }
 .form-grid label { display: flex; flex-direction: column; gap: 7px; color: #70786d; font-size: 7px; letter-spacing: .11em; font-weight: 800; }
 .form-grid label.wide { grid-column: 1 / -1; }
 .form-grid label span em { font-style: normal; color: #535a51; margin-left: 5px; }
+.form-grid label > small { color: #626a5f; font-size: 11px; font-weight: 500; letter-spacing: 0; text-align: right; }
 .form-grid select { height: 37px; border: 1px solid #30372d; border-radius: 7px; background: #1b2019; color: #dfe4da; padding: 0 9px; outline: 0; font-size: 10px; }
 .folder-input { display: flex; gap: 7px; }
 .folder-input input { flex: 1; }
@@ -448,6 +451,7 @@ body { font-size: 15px; }
 .terms-note p { font-size: 12px; }
 .setting-field { font-size: 11px; }
 .setting-field input[type=password], .form-grid input { height: 43px; font-size: 14px; }
+.form-grid textarea { font-size: 14px; }
 .setting-field small { font-size: 11px; }
 .check-row { font-size: 12px; }
 .text-link { font-size: 12px; }

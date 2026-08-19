@@ -10,6 +10,7 @@ import type {
   ResolutionPlan,
   SaveSettingsInput,
   SearchFilters,
+  UpdateProfileInput,
 } from '../../shared/domain';
 import { toggleOptionalProject } from '../lib/dependencies';
 
@@ -101,6 +102,12 @@ export function useMosaic() {
     setNotice({ tone: 'info', text: 'Perfil removido. Os arquivos da instância foram preservados.' });
   };
 
+  const updateProfile = async (id: string, input: UpdateProfileInput) => {
+    const updated = await window.mosaic.profiles.update(id, input);
+    setProfiles((current) => current.map((profile) => profile.id === updated.id ? updated : profile));
+    setNotice({ tone: 'success', text: 'Dados do modpack atualizados.' });
+  };
+
   const resolveProject = async (project: ProjectSummary) => {
     if (!currentProfile) return;
     setResolvingKey(`${project.provider}:${project.projectId}`);
@@ -169,6 +176,6 @@ export function useMosaic() {
   return {
     profiles, currentProfile, settings, gameVersions, filters, setFilters, catalog, searching,
     resolvingKey, plan, setPlan, installing, updatingPlan, progress, notice, setNotice, installedKeys,
-    chooseProfile, createProfile, removeProfile, resolveProject, toggleOptionalDependency, installPlan, removeMod, saveSettings, exportProfile,
+    chooseProfile, createProfile, updateProfile, removeProfile, resolveProject, toggleOptionalDependency, installPlan, removeMod, saveSettings, exportProfile,
   };
 }
