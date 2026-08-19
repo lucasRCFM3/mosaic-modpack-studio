@@ -1,0 +1,16 @@
+node_modules/
+dist/
+release/
+src-tauri/target/
+*.log
+*.part
+.env
+.DS_Store
+Thumbs.db
+.qa-user-data/
+.env.*
+!.env.example
+.idea/
+.vscode/
+coverage/
+*.pdb

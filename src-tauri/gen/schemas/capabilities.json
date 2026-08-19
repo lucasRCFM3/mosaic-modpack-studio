@@ -1,0 +1,1 @@
+{"main-window":{"identifier":"main-window","description":"Permissões mínimas da janela principal; operações privilegiadas passam por comandos Rust validados.","local":true,"windows":["main"],"permissions":["core:default"]}}

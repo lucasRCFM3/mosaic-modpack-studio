@@ -1,0 +1,32 @@
+import { useState } from 'react';
+import { CreateProfileDialog } from './components/CreateProfileDialog';
+import { DiscoverPage } from './components/DiscoverPage';
+import { DownloadsPage } from './components/DownloadsPage';
+import { Icon } from './components/Icon';
+import { ModpackPage } from './components/ModpackPage';
+import { ResolutionDialog } from './components/ResolutionDialog';
+import { SettingsPage } from './components/SettingsPage';
+import { Sidebar, type ViewId } from './components/Sidebar';
+import { Topbar } from './components/Topbar';
+import { useMosaic } from './hooks/useMosaic';
+
+export default function App() {
+  const mosaic = useMosaic();
+  const [view, setView] = useState<ViewId>('discover');
+  const [creating, setCreating] = useState(false);
+  return <div className="app-shell">
+    <Sidebar view={view} onView={setView} profiles={mosaic.profiles} currentProfile={mosaic.currentProfile} onProfile={mosaic.chooseProfile} onCreateProfile={() => setCreating(true)}/>
+    <main className="workspace">
+      <Topbar profile={mosaic.currentProfile} onCreate={() => setCreating(true)}/>
+      <div className="page-scroll">
+        {view === 'discover' ? <DiscoverPage profile={mosaic.currentProfile} filters={mosaic.filters} setFilters={mosaic.setFilters} versions={mosaic.gameVersions} catalog={mosaic.catalog} searching={mosaic.searching} resolvingKey={mosaic.resolvingKey} installedKeys={mosaic.installedKeys} onAdd={mosaic.resolveProject}/> : null}
+        {view === 'modpack' ? <ModpackPage profile={mosaic.currentProfile} onDiscover={() => setView('discover')} onRemove={(ref) => { if (window.confirm(`Remover ${'name' in ref ? ref.name : 'este mod'} da instância?`)) void mosaic.removeMod(ref); }} onExport={() => void mosaic.exportProfile()} onDeleteProfile={() => { if (mosaic.currentProfile && window.confirm(`Remover o perfil “${mosaic.currentProfile.name}”? Os arquivos no disco serão preservados.`)) void mosaic.removeProfile(mosaic.currentProfile.id); }}/> : null}
+        {view === 'downloads' ? <DownloadsPage progress={mosaic.progress}/> : null}
+        {view === 'settings' ? <SettingsPage settings={mosaic.settings} onSave={mosaic.saveSettings}/> : null}
+      </div>
+    </main>
+    {mosaic.plan ? <ResolutionDialog plan={mosaic.plan} installing={mosaic.installing} updatingPlan={mosaic.updatingPlan} progress={mosaic.progress} onClose={() => mosaic.setPlan(undefined)} onToggleOptional={(project) => void mosaic.toggleOptionalDependency(project)} onInstall={() => void mosaic.installPlan()}/> : null}
+    {creating ? <CreateProfileDialog versions={mosaic.gameVersions} onClose={() => setCreating(false)} onCreate={mosaic.createProfile}/> : null}
+    {mosaic.notice ? <div className={`toast ${mosaic.notice.tone}`}><Icon name={mosaic.notice.tone === 'error' ? 'alert' : mosaic.notice.tone === 'success' ? 'check' : 'sparkles'}/><span>{mosaic.notice.text}</span><button onClick={() => mosaic.setNotice(undefined)}><Icon name="x"/></button></div> : null}
+  </div>;
+}

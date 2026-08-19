@@ -1,0 +1,37 @@
+{
+  "name": "mosaic-modpack-studio",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Gerenciador desktop unificado de modpacks para Modrinth e CurseForge.",
+  "author": "Mosaic contributors",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "dev:web": "vite",
+    "build": "tauri build",
+    "build:web": "npm run typecheck && vite build",
+    "package": "tauri build --bundles nsis",
+    "preview": "vite preview",
+    "start": "tauri dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "check": "npm run typecheck && npm test && npm run test:rust && npm run build:web"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
+    "@vitejs/plugin-react": "6.0.5",
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "typescript": "7.0.2",
+    "vite": "8.2.1",
+    "vitest": "4.1.11"
+  }
+}
