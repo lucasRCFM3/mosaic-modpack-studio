@@ -18,7 +18,7 @@ async-recursion = "1"
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"
 hex = "0.4"
-keyring = "3"
+keyring = "4"
 md-5 = "0.10"
 open = "5"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
