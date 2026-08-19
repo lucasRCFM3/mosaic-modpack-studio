@@ -395,6 +395,32 @@ pub struct UpdateProfileInput {
     pub description: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PresetEntry {
+    pub project: ProjectRef,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModPreset {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub entries: Vec<PresetEntry>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavePresetInput {
+    pub name: String,
+    pub description: Option<String>,
+    pub entries: Vec<PresetEntry>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveSettingsInput {

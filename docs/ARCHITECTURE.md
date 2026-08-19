@@ -11,6 +11,7 @@ React
 Comandos Tauri
   ├── CatalogService ───────► ProviderRegistry ─► Modrinth / CurseForge
   ├── DependencyResolver ───► grafo + plano imutável em memória
+  ├── PresetService ────────► coleções reutilizáveis de projetos
   ├── DownloadManager ──────► HTTPS + hash + mods/
   └── ProfileService ───────► JSON local + lockfile
 ```
@@ -36,6 +37,10 @@ O resolvedor percorre o grafo recursivamente e mantém conjuntos de nós visitad
 6. Mantém o plano no backend; a interface devolve apenas seu identificador para instalar.
 
 Essa separação garante que dependências opcionais não sejam instaladas por acidente. A preferência global de pré-seleção é apenas uma conveniência opt-in.
+
+### Resolução de predefinições
+
+Uma predefinição guarda referências estáveis de projetos e nomes para apresentação, nunca URLs ou arquivos de uma versão específica. Ao aplicá-la, todos os projetos entram como raízes do mesmo `ResolveContext`. Isso permite escolher versões adequadas ao perfil atual, deduplicar dependências compartilhadas e produzir um único plano atômico. Qualquer raiz incompatível gera um erro e impede a instalação parcial do lote.
 
 ## Download e integridade
 

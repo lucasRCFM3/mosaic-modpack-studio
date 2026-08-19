@@ -16,7 +16,7 @@ export function ResolutionDialog({ plan, installing, updatingPlan, progress, onC
   const completed = Object.values(progress).filter(({ state }) => state === 'installed' || state === 'skipped').length;
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !installing && onClose()}>
     <section className="modal resolution-modal" role="dialog" aria-modal="true" aria-labelledby="resolution-title">
-      <header><div className="modal-symbol"><Icon name="layers"/></div><div><span className="eyebrow">PLANO DE INSTALAÇÃO</span><h2 id="resolution-title">Tudo compatível. Pode instalar.</h2><p>Revise exatamente o que entrará no seu modpack.</p></div><button className="icon-button close" disabled={installing} onClick={onClose}><Icon name="x"/></button></header>
+      <header><div className="modal-symbol"><Icon name="layers"/></div><div><span className="eyebrow">PLANO DE INSTALAÇÃO</span><h2 id="resolution-title">{plan.canInstall ? 'Tudo compatível. Pode instalar.' : 'Encontramos incompatibilidades.'}</h2><p>{plan.canInstall ? 'Revise exatamente o que entrará no seu modpack.' : 'Nenhum arquivo será instalado enquanto houver bloqueios.'}</p></div><button className="icon-button close" disabled={installing} onClick={onClose}><Icon name="x"/></button></header>
 
       <div className="plan-target"><span><Icon name="box"/></span><div><small>DESTINO</small><strong>Minecraft {plan.target.minecraftVersion} · {plan.target.loader}</strong></div><div><small>DOWNLOAD</small><strong>{bytes(plan.downloadableBytes)}</strong></div><div><small>ARQUIVOS</small><strong>{plan.nodes.length}</strong></div></div>
 

@@ -187,6 +187,26 @@ export interface UpdateProfileInput {
   description: string;
 }
 
+export interface PresetEntry {
+  project: ProjectRef;
+  name: string;
+}
+
+export interface ModPreset {
+  id: string;
+  name: string;
+  description: string;
+  entries: PresetEntry[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavePresetInput {
+  name: string;
+  description?: string;
+  entries: PresetEntry[];
+}
+
 export interface SaveSettingsInput {
   curseForgeApiKey?: string;
   clearCurseForgeApiKey?: boolean;

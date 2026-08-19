@@ -1,11 +1,12 @@
 import type { ModpackProfile } from '../../shared/domain';
 import { Icon, type IconName } from './Icon';
 
-export type ViewId = 'discover' | 'modpack' | 'downloads' | 'settings';
+export type ViewId = 'discover' | 'modpack' | 'presets' | 'downloads' | 'settings';
 
 const navigation: Array<{ id: ViewId; label: string; icon: IconName }> = [
   { id: 'discover', label: 'Descobrir', icon: 'compass' },
   { id: 'modpack', label: 'Meu modpack', icon: 'box' },
+  { id: 'presets', label: 'Predefinições', icon: 'layers' },
   { id: 'downloads', label: 'Downloads', icon: 'download' },
 ];
 

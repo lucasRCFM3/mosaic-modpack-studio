@@ -1,7 +1,7 @@
 use crate::{
     application::{
-        catalog::CatalogService, download::DownloadManager, profiles::ProfileService,
-        resolver::DependencyResolver,
+        catalog::CatalogService, download::DownloadManager, presets::PresetService,
+        profiles::ProfileService, resolver::DependencyResolver,
     },
     error::AppResult,
     infrastructure::{secrets::SecretStore, store::JsonStore},
@@ -15,6 +15,7 @@ pub struct AppState {
     pub secrets: Arc<SecretStore>,
     pub catalog: Arc<CatalogService>,
     pub profiles: Arc<ProfileService>,
+    pub presets: Arc<PresetService>,
     pub resolver: Arc<DependencyResolver>,
     pub downloads: Arc<DownloadManager>,
     pub providers: Arc<ProviderRegistry>,
@@ -33,6 +34,7 @@ impl AppState {
         let providers = Arc::new(ProviderRegistry::new(secrets.clone())?);
         let profiles = Arc::new(ProfileService::new(store.clone(), documents.join("Mosaic")));
         profiles.ensure_default().await?;
+        let presets = Arc::new(PresetService::new(store.clone()));
         let catalog = Arc::new(CatalogService::new(providers.clone()));
         let resolver = Arc::new(DependencyResolver::new(providers.clone()));
         let downloads = Arc::new(DownloadManager::new(profiles.clone())?);
@@ -41,6 +43,7 @@ impl AppState {
             secrets,
             catalog,
             profiles,
+            presets,
             resolver,
             downloads,
             providers,

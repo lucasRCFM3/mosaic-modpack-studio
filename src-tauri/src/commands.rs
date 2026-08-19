@@ -78,6 +78,58 @@ pub async fn profiles_export(
 }
 
 #[tauri::command]
+pub async fn presets_list(state: State<'_, AppState>) -> Result<Vec<ModPreset>, String> {
+    Ok(state.presets.list().await)
+}
+
+#[tauri::command]
+pub async fn presets_create(
+    state: State<'_, AppState>,
+    input: SavePresetInput,
+) -> Result<ModPreset, String> {
+    state.presets.create(input).await.message()
+}
+
+#[tauri::command]
+pub async fn presets_update(
+    state: State<'_, AppState>,
+    preset_id: String,
+    input: SavePresetInput,
+) -> Result<ModPreset, String> {
+    validate_uuid(&preset_id)?;
+    state.presets.update(&preset_id, input).await.message()
+}
+
+#[tauri::command]
+pub async fn presets_remove(state: State<'_, AppState>, preset_id: String) -> Result<(), String> {
+    validate_uuid(&preset_id)?;
+    state.presets.remove(&preset_id).await.message()
+}
+
+#[tauri::command]
+pub async fn presets_resolve(
+    state: State<'_, AppState>,
+    profile_id: String,
+    preset_id: String,
+    selected_optional: Option<Vec<ProjectRef>>,
+) -> Result<ResolutionPlan, String> {
+    validate_uuid(&profile_id)?;
+    validate_uuid(&preset_id)?;
+    let profile = state.profiles.get(&profile_id).await.message()?;
+    let preset = state.presets.get(&preset_id).await.message()?;
+    let roots = preset
+        .entries
+        .into_iter()
+        .map(|entry| entry.project)
+        .collect();
+    state
+        .resolver
+        .resolve_many(&profile, roots, selected_optional.unwrap_or_default())
+        .await
+        .message()
+}
+
+#[tauri::command]
 pub async fn mods_resolve(
     state: State<'_, AppState>,
     profile_id: String,

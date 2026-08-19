@@ -4,11 +4,13 @@ import type {
   CreateProfileInput,
   InstallProgress,
   InstallResult,
+  ModPreset,
   ModpackProfile,
   ProjectRef,
   ResolutionPlan,
   SaveSettingsInput,
   SearchFilters,
+  SavePresetInput,
   UpdateProfileInput,
 } from './domain';
 
@@ -24,6 +26,13 @@ export interface MosaicApi {
     remove(profileId: string): Promise<void>;
     chooseFolder(): Promise<string | undefined>;
     export(profileId: string): Promise<string | undefined>;
+  };
+  presets: {
+    list(): Promise<ModPreset[]>;
+    create(input: SavePresetInput): Promise<ModPreset>;
+    update(presetId: string, input: SavePresetInput): Promise<ModPreset>;
+    remove(presetId: string): Promise<void>;
+    resolve(profileId: string, presetId: string, selectedOptional?: ProjectRef[]): Promise<ResolutionPlan>;
   };
   mods: {
     resolve(profileId: string, project: ProjectRef, selectedOptional?: ProjectRef[]): Promise<ResolutionPlan>;

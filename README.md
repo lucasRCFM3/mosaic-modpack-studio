@@ -17,6 +17,7 @@ Aplicativo desktop local-first, construído com **Rust + Tauri 2 + React**, para
 - revisão do plano antes de qualquer escrita em disco;
 - downloads concorrentes por HTTPS, arquivo `.part`, verificação de hash e renomeação;
 - perfis independentes com nome e descrição editáveis, registro dos mods e lockfile JSON exportável;
+- predefinições reutilizáveis que verificam versões compatíveis e resolvem todas as dependências em lote;
 - chave da CurseForge guardada no cofre de credenciais do sistema operacional;
 - frontend sem acesso direto ao sistema de arquivos ou aos segredos;
 - instalador NSIS nativo para Windows.
@@ -31,6 +32,16 @@ Aplicativo desktop local-first, construído com **Rust + Tauri 2 + React**, para
 | Incompatível (`incompatible`) | Bloqueia o plano quando o conflito está presente |
 
 Existe uma preferência para pré-selecionar opcionais, mas ela é **opt-in** e vem desativada em instalações novas.
+
+## Predefinições de mods
+
+Depois de montar uma base uma vez, abra **Predefinições → Criar do modpack atual**, escolha os projetos que devem fazer parte da lista e salve. Ao aplicar essa predefinição em outro perfil, o Mosaic:
+
+1. consulta uma versão compatível de cada projeto para o Minecraft e loader do destino;
+2. monta um único grafo, removendo dependências duplicadas;
+3. mostra incompatibilidades e bloqueia instalações parciais inseguras;
+4. mantém dependências opcionais desmarcadas, salvo se o usuário optar pelo contrário;
+5. instala o lote somente após confirmação do plano.
 
 ## Desenvolvimento
 

@@ -91,7 +91,7 @@ struct RawDependency {
 impl ModrinthProvider {
     pub fn new() -> AppResult<Self> {
         let client = reqwest::Client::builder()
-            .user_agent("mosaic-modpack-studio/0.2.1 (tauri; rust)")
+            .user_agent("mosaic-modpack-studio/0.3.0 (tauri; rust)")
             .timeout(std::time::Duration::from_secs(20))
             .build()?;
         Ok(Self { client })
@@ -311,8 +311,7 @@ impl ModProvider for ModrinthProvider {
             .await?
         };
         versions.retain(|version| {
-            version.project_id == project_id
-                && version.game_versions.contains(&target.minecraft_version)
+            version.game_versions.contains(&target.minecraft_version)
                 && version
                     .loaders
                     .iter()

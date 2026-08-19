@@ -1,4 +1,7 @@
-use crate::{domain::ModpackProfile, error::AppResult};
+use crate::{
+    domain::{ModPreset, ModpackProfile},
+    error::AppResult,
+};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tokio::sync::RwLock;
@@ -23,6 +26,7 @@ impl Default for StoredSettings {
 #[serde(rename_all = "camelCase", default)]
 pub struct Database {
     pub profiles: Vec<ModpackProfile>,
+    pub presets: Vec<ModPreset>,
     pub settings: StoredSettings,
 }
 

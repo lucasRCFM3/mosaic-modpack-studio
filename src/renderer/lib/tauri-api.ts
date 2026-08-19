@@ -21,6 +21,13 @@ export const mosaicApi: MosaicApi = {
     chooseFolder: () => call('profiles_choose_folder'),
     export: (profileId) => call('profiles_export', { profileId }),
   },
+  presets: {
+    list: () => call('presets_list'),
+    create: (input) => call('presets_create', { input }),
+    update: (presetId, input) => call('presets_update', { presetId, input }),
+    remove: (presetId) => call('presets_remove', { presetId }),
+    resolve: (profileId, presetId, selectedOptional = []) => call('presets_resolve', { profileId, presetId, selectedOptional }),
+  },
   mods: {
     resolve: (profileId, project, selectedOptional = []) => call('mods_resolve', { profileId, project, selectedOptional }),
     install: (profileId, planId) => call('mods_install', { profileId, planId }),

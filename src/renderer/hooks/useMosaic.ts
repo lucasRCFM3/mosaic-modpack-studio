@@ -4,11 +4,13 @@ import type {
   CatalogSearchResult,
   CreateProfileInput,
   InstallProgress,
+  ModPreset,
   ModpackProfile,
   ProjectRef,
   ProjectSummary,
   ResolutionPlan,
   SaveSettingsInput,
+  SavePresetInput,
   SearchFilters,
   UpdateProfileInput,
 } from '../../shared/domain';
@@ -25,6 +27,7 @@ const emptyResult: CatalogSearchResult = {
 
 export function useMosaic() {
   const [profiles, setProfiles] = useState<ModpackProfile[]>([]);
+  const [presets, setPresets] = useState<ModPreset[]>([]);
   const [currentProfileId, setCurrentProfileId] = useState(() => localStorage.getItem('mosaic:last-profile') ?? '');
   const [settings, setSettings] = useState<AppSettings>({ curseForgeConfigured: false, includeOptionalDependencies: false, downloadConcurrency: 3, telemetry: false });
   const [gameVersions, setGameVersions] = useState(fallbackVersions);
@@ -35,7 +38,9 @@ export function useMosaic() {
   const [catalog, setCatalog] = useState<CatalogSearchResult>(emptyResult);
   const [searching, setSearching] = useState(true);
   const [resolvingKey, setResolvingKey] = useState<string>();
+  const [resolvingPresetId, setResolvingPresetId] = useState<string>();
   const [plan, setPlan] = useState<ResolutionPlan>();
+  const [resolutionSource, setResolutionSource] = useState<{ kind: 'project'; project: ProjectRef } | { kind: 'preset'; presetId: string }>();
   const [installing, setInstalling] = useState(false);
   const [updatingPlan, setUpdatingPlan] = useState(false);
   const [progress, setProgress] = useState<Record<string, InstallProgress>>({});
@@ -55,6 +60,7 @@ export function useMosaic() {
   useEffect(() => {
     void Promise.all([
       refreshProfiles(),
+      window.mosaic.presets.list().then(setPresets),
       window.mosaic.settings.get().then(setSettings),
       window.mosaic.catalog.gameVersions().then((versions) => setGameVersions(versions.slice(0, 40))).catch(() => undefined),
     ]).catch((error) => setNotice({ tone: 'error', text: error.message }));
@@ -116,6 +122,7 @@ export function useMosaic() {
       if (settings.includeOptionalDependencies && resolved.optionalDependencies.length) {
         resolved = await window.mosaic.mods.resolve(currentProfile.id, project, resolved.optionalDependencies.map(({ project }) => project));
       }
+      setResolutionSource({ kind: 'project', project });
       setPlan(resolved);
     } catch (error) {
       setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível resolver as dependências.' });
@@ -125,12 +132,14 @@ export function useMosaic() {
   };
 
   const toggleOptionalDependency = async (project: ProjectRef) => {
-    if (!currentProfile || !plan) return;
-    const root = plan.nodes.find(({ reason }) => reason === 'requested')?.project;
-    if (!root) return;
+    if (!currentProfile || !plan || !resolutionSource) return;
     const next = toggleOptionalProject(plan, project);
     setUpdatingPlan(true);
-    try { setPlan(await window.mosaic.mods.resolve(currentProfile.id, root, next)); }
+    try {
+      setPlan(resolutionSource.kind === 'project'
+        ? await window.mosaic.mods.resolve(currentProfile.id, resolutionSource.project, next)
+        : await window.mosaic.presets.resolve(currentProfile.id, resolutionSource.presetId, next));
+    }
     catch (error) { setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível atualizar as opcionais.' }); }
     finally { setUpdatingPlan(false); }
   };
@@ -143,6 +152,7 @@ export function useMosaic() {
       const result = await window.mosaic.mods.install(currentProfile.id, plan.id);
       setProfiles((current) => current.map((profile) => profile.id === result.profile.id ? result.profile : profile));
       setPlan(undefined);
+      setResolutionSource(undefined);
       const failed = result.failed.length ? ` ${result.failed.length} falharam.` : '';
       setNotice({ tone: result.failed.length ? 'error' : 'success', text: `${result.installed} mods instalados, ${result.skipped} já estavam prontos.${failed}` });
     } catch (error) {
@@ -171,11 +181,40 @@ export function useMosaic() {
     if (path) setNotice({ tone: 'success', text: 'Lockfile exportado com sucesso.' });
   };
 
+  const savePreset = async (input: SavePresetInput, presetId?: string) => {
+    const saved = presetId
+      ? await window.mosaic.presets.update(presetId, input)
+      : await window.mosaic.presets.create(input);
+    setPresets((current) => [saved, ...current.filter((preset) => preset.id !== saved.id)]);
+    setNotice({ tone: 'success', text: presetId ? 'Predefinição atualizada.' : 'Predefinição criada.' });
+  };
+
+  const removePreset = async (presetId: string) => {
+    await window.mosaic.presets.remove(presetId);
+    setPresets((current) => current.filter((preset) => preset.id !== presetId));
+    setNotice({ tone: 'info', text: 'Predefinição removida. Nenhum mod instalado foi alterado.' });
+  };
+
+  const resolvePreset = async (preset: ModPreset) => {
+    if (!currentProfile) return;
+    setResolvingPresetId(preset.id);
+    try {
+      let resolved = await window.mosaic.presets.resolve(currentProfile.id, preset.id, []);
+      if (settings.includeOptionalDependencies && resolved.optionalDependencies.length) {
+        resolved = await window.mosaic.presets.resolve(currentProfile.id, preset.id, resolved.optionalDependencies.map(({ project }) => project));
+      }
+      setResolutionSource({ kind: 'preset', presetId: preset.id });
+      setPlan(resolved);
+    } catch (error) {
+      setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível verificar a predefinição.' });
+    } finally { setResolvingPresetId(undefined); }
+  };
+
   const installedKeys = useMemo(() => new Set(currentProfile?.mods.map((mod) => `${mod.provider}:${mod.projectId}`) ?? []), [currentProfile]);
 
   return {
-    profiles, currentProfile, settings, gameVersions, filters, setFilters, catalog, searching,
-    resolvingKey, plan, setPlan, installing, updatingPlan, progress, notice, setNotice, installedKeys,
-    chooseProfile, createProfile, updateProfile, removeProfile, resolveProject, toggleOptionalDependency, installPlan, removeMod, saveSettings, exportProfile,
+    profiles, currentProfile, presets, settings, gameVersions, filters, setFilters, catalog, searching,
+    resolvingKey, resolvingPresetId, plan, setPlan, installing, updatingPlan, progress, notice, setNotice, installedKeys,
+    chooseProfile, createProfile, updateProfile, removeProfile, savePreset, removePreset, resolvePreset, resolveProject, toggleOptionalDependency, installPlan, removeMod, saveSettings, exportProfile,
   };
 }

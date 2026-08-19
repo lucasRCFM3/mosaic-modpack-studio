@@ -47,6 +47,21 @@ impl DependencyResolver {
         root: ProjectRef,
         selected_optional: Vec<ProjectRef>,
     ) -> AppResult<ResolutionPlan> {
+        self.resolve_many(profile, vec![root], selected_optional)
+            .await
+    }
+
+    pub async fn resolve_many(
+        &self,
+        profile: &ModpackProfile,
+        roots: Vec<ProjectRef>,
+        selected_optional: Vec<ProjectRef>,
+    ) -> AppResult<ResolutionPlan> {
+        if roots.is_empty() {
+            return Err(crate::error::AppError::Message(
+                "A predefinição não contém mods.".into(),
+            ));
+        }
         let mut context = ResolveContext {
             profile,
             selected_optional: selected_optional
@@ -66,8 +81,13 @@ impl DependencyResolver {
                 .map(|item| (item.as_ref().key(), item))
                 .collect(),
         };
-        self.visit(&mut context, root, InstallReason::Requested, None, None)
-            .await;
+        let mut unique_roots = HashSet::new();
+        for root in roots {
+            if unique_roots.insert(root.key()) {
+                self.visit(&mut context, root, InstallReason::Requested, None, None)
+                    .await;
+            }
+        }
         let nodes: Vec<_> = context
             .order
             .iter()
@@ -394,7 +414,7 @@ mod tests {
             .resolve(&profile, root, Vec::new())
             .await
             .unwrap();
-        assert!(plan.can_install);
+        assert!(plan.can_install, "issues: {:#?}", plan.issues);
         assert!(!plan.optional_dependencies.is_empty());
         assert!(
             plan.optional_dependencies
@@ -405,6 +425,45 @@ mod tests {
             plan.nodes
                 .iter()
                 .all(|node| !matches!(node.reason, InstallReason::Optional))
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "consulta a API pública da Modrinth"]
+    async fn live_preset_resolves_multiple_roots_in_one_plan() {
+        let registry = Arc::new(ProviderRegistry::new(Arc::new(SecretStore::new())).unwrap());
+        let profile = ModpackProfile {
+            id: Uuid::new_v4().to_string(),
+            name: "Preset live".into(),
+            description: String::new(),
+            target: ProfileTarget {
+                minecraft_version: "1.21.1".into(),
+                loader: ModLoader::Fabric,
+                release_channels: vec![ReleaseChannel::Release, ReleaseChannel::Beta],
+            },
+            instance_path: "C:\\test".into(),
+            created_at: String::new(),
+            updated_at: String::new(),
+            mods: Vec::new(),
+        };
+        let roots = ["sodium", "modmenu"]
+            .into_iter()
+            .map(|project_id| ProjectRef {
+                provider: ProviderId::Modrinth,
+                project_id: project_id.into(),
+            })
+            .collect();
+        let plan = DependencyResolver::new(registry)
+            .resolve_many(&profile, roots, Vec::new())
+            .await
+            .unwrap();
+        assert!(plan.can_install, "issues: {:#?}", plan.issues);
+        assert_eq!(
+            plan.nodes
+                .iter()
+                .filter(|node| matches!(node.reason, InstallReason::Requested))
+                .count(),
+            2
         );
     }
 }
