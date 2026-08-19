@@ -35,7 +35,7 @@ Existe uma preferência para pré-selecionar opcionais, mas ela é **opt-in** e 
 
 ## Predefinições de mods
 
-Depois de montar uma base uma vez, abra **Predefinições → Criar do modpack atual**, escolha os projetos que devem fazer parte da lista e salve. Ao aplicar essa predefinição em outro perfil, o Mosaic:
+Abra **Predefinições → Nova predefinição**. Você pode pesquisar projetos diretamente na Modrinth e CurseForge, mesmo que não estejam instalados, ou aproveitar mods do perfil atual. Escolha os itens da lista e salve. Ao aplicar essa predefinição em outro perfil, o Mosaic:
 
 1. consulta uma versão compatível de cada projeto para o Minecraft e loader do destino;
 2. monta um único grafo, removendo dependências duplicadas;

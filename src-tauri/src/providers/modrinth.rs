@@ -91,7 +91,7 @@ struct RawDependency {
 impl ModrinthProvider {
     pub fn new() -> AppResult<Self> {
         let client = reqwest::Client::builder()
-            .user_agent("mosaic-modpack-studio/0.3.0 (tauri; rust)")
+            .user_agent("mosaic-modpack-studio/0.3.1 (tauri; rust)")
             .timeout(std::time::Duration::from_secs(20))
             .build()?;
         Ok(Self { client })
