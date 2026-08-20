@@ -5,7 +5,7 @@ use crate::{
     infrastructure::secrets::SecretStore,
 };
 use async_trait::async_trait;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::sync::Arc;
 
 const BASE_URL: &str = "https://api.curseforge.com/v1/";
@@ -22,7 +22,7 @@ struct Envelope<T> {
 #[derive(Deserialize)]
 struct ListEnvelope<T> {
     data: Vec<T>,
-    pagination: Pagination,
+    pagination: Option<Pagination>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,14 +36,17 @@ struct RawMod {
     id: u64,
     name: String,
     slug: String,
-    summary: String,
+    summary: Option<String>,
+    #[serde(default, deserialize_with = "null_to_default")]
     authors: Vec<RawAuthor>,
     logo: Option<RawLogo>,
-    links: RawLinks,
-    download_count: u64,
-    date_modified: String,
+    links: Option<RawLinks>,
+    download_count: Option<u64>,
+    date_modified: Option<String>,
+    #[serde(default, deserialize_with = "null_to_default")]
     categories: Vec<RawCategory>,
-    latest_files_indexes: Option<Vec<RawFileIndex>>,
+    #[serde(default, deserialize_with = "null_to_default")]
+    latest_files_indexes: Vec<RawFileIndex>,
 }
 #[derive(Deserialize)]
 struct RawAuthor {
@@ -57,7 +60,7 @@ struct RawLogo {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RawLinks {
-    website_url: String,
+    website_url: Option<String>,
 }
 #[derive(Deserialize)]
 struct RawCategory {
@@ -78,12 +81,15 @@ struct RawFile {
     display_name: String,
     file_name: String,
     release_type: u8,
+    #[serde(default, deserialize_with = "null_to_default")]
     hashes: Vec<RawHash>,
     file_date: String,
     file_length: u64,
-    download_count: u64,
+    download_count: Option<u64>,
     download_url: Option<String>,
+    #[serde(default, deserialize_with = "null_to_default")]
     game_versions: Vec<String>,
+    #[serde(default, deserialize_with = "null_to_default")]
     dependencies: Vec<RawDependency>,
 }
 #[derive(Deserialize)]
@@ -103,6 +109,7 @@ impl CurseForgeProvider {
         Ok(Self {
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(20))
+                .user_agent("mosaic-modpack-studio/0.3.6 (tauri; rust)")
                 .build()?,
             secrets,
         })
@@ -123,6 +130,7 @@ impl CurseForgeProvider {
             .get(format!("{BASE_URL}{path}"))
             .header("x-api-key", key)
             .header("Accept", "application/json")
+            .header("Accept-Encoding", "identity")
             .query(query)
             .send()
             .await?;
@@ -134,11 +142,28 @@ impl CurseForgeProvider {
                 body.chars().take(180).collect::<String>()
             )));
         }
-        Ok(response.json().await?)
+        let body = response.bytes().await?;
+        let mut deserializer = serde_json::Deserializer::from_slice(&body);
+        serde_path_to_error::deserialize(&mut deserializer).map_err(|error| {
+            AppError::Message(format!(
+                "A CurseForge enviou uma resposta incompatível no campo `{}`: {}",
+                error.path(),
+                error.inner()
+            ))
+        })
     }
 
     fn project_from_raw(&self, value: RawMod) -> ProjectSummary {
-        let indexes = value.latest_files_indexes.unwrap_or_default();
+        let indexes = value.latest_files_indexes;
+        let website_url = value
+            .links
+            .and_then(|links| links.website_url)
+            .unwrap_or_else(|| {
+                format!(
+                    "https://www.curseforge.com/minecraft/mc-mods/{}",
+                    value.slug
+                )
+            });
         let mut versions: Vec<_> = indexes
             .iter()
             .map(|index| index.game_version.clone())
@@ -156,7 +181,7 @@ impl CurseForgeProvider {
             project_id: value.id.to_string(),
             slug: value.slug,
             name: value.name,
-            summary: value.summary,
+            summary: value.summary.unwrap_or_default(),
             author: value
                 .authors
                 .into_iter()
@@ -164,9 +189,9 @@ impl CurseForgeProvider {
                 .collect::<Vec<_>>()
                 .join(", "),
             icon_url: value.logo.and_then(|logo| logo.thumbnail_url),
-            website_url: value.links.website_url,
-            downloads: value.download_count,
-            updated_at: value.date_modified,
+            website_url,
+            downloads: value.download_count.unwrap_or_default(),
+            updated_at: value.date_modified.unwrap_or_default(),
             categories: value
                 .categories
                 .into_iter()
@@ -190,7 +215,7 @@ impl CurseForgeProvider {
             loaders: vec![loader],
             channel: channel_from_id(value.release_type),
             published_at: value.file_date,
-            downloads: value.download_count,
+            downloads: value.download_count.unwrap_or_default(),
             files: vec![DownloadFile {
                 filename: value.file_name,
                 url: value.download_url,
@@ -262,13 +287,17 @@ impl ModProvider for CurseForgeProvider {
                 ],
             )
             .await?;
+        let projects: Vec<_> = response
+            .data
+            .into_iter()
+            .map(|item| self.project_from_raw(item))
+            .collect();
         Ok(ProviderSearchResult {
-            projects: response
-                .data
-                .into_iter()
-                .map(|item| self.project_from_raw(item))
-                .collect(),
-            total: response.pagination.total_count,
+            total: response
+                .pagination
+                .map(|pagination| pagination.total_count)
+                .unwrap_or_else(|| projects.len() as u64),
+            projects,
         })
     }
 
@@ -356,5 +385,58 @@ fn dependency_from_id(id: u8) -> Option<DependencyType> {
         3 => Some(DependencyType::Required),
         5 => Some(DependencyType::Incompatible),
         _ => None,
+    }
+}
+
+fn null_to_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_nullable_optional_fields_from_search() {
+        let body = br#"{
+            "data": [{
+                "id": 238222,
+                "name": "Just Enough Items",
+                "slug": "jei",
+                "summary": null,
+                "authors": null,
+                "logo": null,
+                "links": null,
+                "downloadCount": null,
+                "dateModified": null,
+                "categories": null,
+                "latestFilesIndexes": null
+            }],
+            "pagination": null
+        }"#;
+
+        let parsed: ListEnvelope<RawMod> = serde_json::from_slice(body).unwrap();
+
+        assert_eq!(parsed.data.len(), 1);
+        assert!(parsed.data[0].authors.is_empty());
+        assert!(parsed.data[0].latest_files_indexes.is_empty());
+        assert!(parsed.pagination.is_none());
+    }
+
+    #[test]
+    fn reports_the_json_path_for_an_incompatible_response() {
+        let body = br#"{"data":[{"id":"invalid"}],"pagination":null}"#;
+        let mut deserializer = serde_json::Deserializer::from_slice(body);
+        let error =
+            match serde_path_to_error::deserialize::<_, ListEnvelope<RawMod>>(&mut deserializer) {
+                Ok(_) => panic!("a resposta inválida deveria falhar"),
+                Err(error) => error,
+            };
+
+        assert_eq!(error.path().to_string(), "data[0].id");
     }
 }
