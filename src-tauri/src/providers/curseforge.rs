@@ -70,6 +70,7 @@ struct RawCategory {
 #[serde(rename_all = "camelCase")]
 struct RawFileIndex {
     game_version: String,
+    #[serde(default)]
     mod_loader: u8,
 }
 
@@ -109,7 +110,7 @@ impl CurseForgeProvider {
         Ok(Self {
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(20))
-                .user_agent("mosaic-modpack-studio/0.3.6 (tauri; rust)")
+                .user_agent("mosaic-modpack-studio/0.3.7 (tauri; rust)")
                 .build()?,
             secrets,
         })
@@ -425,6 +426,27 @@ mod tests {
         assert!(parsed.data[0].authors.is_empty());
         assert!(parsed.data[0].latest_files_indexes.is_empty());
         assert!(parsed.pagination.is_none());
+    }
+
+    #[test]
+    fn accepts_file_indexes_without_a_mod_loader() {
+        let body = br#"{
+            "data": [{
+                "id": 238222,
+                "name": "Just Enough Items",
+                "slug": "jei",
+                "latestFilesIndexes": [
+                    {"gameVersion": "1.20.1"},
+                    {"gameVersion": "1.20.1", "modLoader": 4}
+                ]
+            }],
+            "pagination": {"totalCount": 1}
+        }"#;
+
+        let parsed: ListEnvelope<RawMod> = serde_json::from_slice(body).unwrap();
+
+        assert_eq!(parsed.data[0].latest_files_indexes[0].mod_loader, 0);
+        assert_eq!(parsed.data[0].latest_files_indexes[1].mod_loader, 4);
     }
 
     #[test]
