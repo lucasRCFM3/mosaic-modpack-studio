@@ -180,7 +180,7 @@ impl ProfileService {
         }
         let lockfile = Lockfile {
             format_version: 1,
-            generated_by: "Mosaic Modpack Studio 0.3.1",
+            generated_by: "Mosaic Modpack Studio 0.3.2",
             generated_at: Utc::now().to_rfc3339(),
             profile: self.get(id).await?,
         };

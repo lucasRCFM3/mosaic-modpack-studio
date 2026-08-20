@@ -25,3 +25,7 @@ export function addCatalogCandidate(current: PresetCandidate[], project: Project
     reason: 'Adicionado pelo catálogo',
   }];
 }
+
+export function initialPresetSelection(preset?: ModPreset): Set<string> {
+  return new Set(preset?.entries.map((entry) => projectKey(entry.project)) ?? []);
+}

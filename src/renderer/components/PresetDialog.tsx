@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ModPreset, ModpackProfile, PresetEntry, ProjectSummary, SavePresetInput } from '../../shared/domain';
 import { projectKey } from '../../shared/domain';
-import { addCatalogCandidate, initialPresetCandidates } from '../lib/presets';
+import { addCatalogCandidate, initialPresetCandidates, initialPresetSelection } from '../lib/presets';
 import { Icon } from './Icon';
 
 export function PresetDialog({ profile, preset, onClose, onSave }: {
@@ -13,10 +13,7 @@ export function PresetDialog({ profile, preset, onClose, onSave }: {
   const [candidates, setCandidates] = useState(() => initialPresetCandidates(profile, preset));
   const [name, setName] = useState(preset?.name ?? 'Mods essenciais');
   const [description, setDescription] = useState(preset?.description ?? 'Minha base padrão para novos modpacks.');
-  const [selected, setSelected] = useState(() => new Set(
-    preset?.entries.map((entry) => projectKey(entry.project))
-      ?? profile.mods.filter((mod) => mod.reason === 'requested').map(projectKey),
-  ));
+  const [selected, setSelected] = useState(() => initialPresetSelection(preset));
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ProjectSummary[]>([]);
   const [searching, setSearching] = useState(false);
