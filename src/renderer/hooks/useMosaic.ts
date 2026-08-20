@@ -190,6 +190,12 @@ export function useMosaic() {
     if (path) setNotice({ tone: 'success', text: 'Lockfile exportado com sucesso.' });
   };
 
+  const exportModList = async () => {
+    if (!currentProfile) return;
+    const path = await window.mosaic.profiles.exportModList(currentProfile.id);
+    if (path) setNotice({ tone: 'success', text: 'Lista TXT de mods gerada com sucesso.' });
+  };
+
   const savePreset = async (input: SavePresetInput, presetId?: string) => {
     const saved = presetId
       ? await window.mosaic.presets.update(presetId, input)
@@ -224,6 +230,6 @@ export function useMosaic() {
   return {
     profiles, currentProfile, presets, settings, gameVersions, filters, setFilters, catalog, searching,
     resolvingKey, resolvingPresetId, plan, setPlan, installing, updatingPlan, progress, notice, setNotice, installedKeys,
-    chooseProfile, createProfile, updateProfile, removeProfile, savePreset, removePreset, resolvePreset, resolveProject, toggleOptionalDependency, installPlan, removeMod, saveSettings, exportProfile,
+    chooseProfile, createProfile, updateProfile, removeProfile, savePreset, removePreset, resolvePreset, resolveProject, toggleOptionalDependency, installPlan, removeMod, saveSettings, exportProfile, exportModList,
   };
 }

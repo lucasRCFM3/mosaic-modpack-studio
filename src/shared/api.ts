@@ -27,6 +27,7 @@ export interface MosaicApi {
     remove(profileId: string): Promise<void>;
     chooseFolder(): Promise<string | undefined>;
     export(profileId: string): Promise<string | undefined>;
+    exportModList(profileId: string): Promise<string | undefined>;
   };
   presets: {
     list(): Promise<ModPreset[]>;

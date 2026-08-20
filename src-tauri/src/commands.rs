@@ -78,6 +78,31 @@ pub async fn profiles_export(
 }
 
 #[tauri::command]
+pub async fn profiles_export_mod_list(
+    state: State<'_, AppState>,
+    profile_id: String,
+) -> Result<Option<String>, String> {
+    validate_uuid(&profile_id)?;
+    let profile = state.profiles.get(&profile_id).await.message()?;
+    let filename = format!("{}-mods.txt", safe_export_name(&profile.name));
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .set_title("Gerar TXT com a lista de mods")
+        .set_file_name(&filename)
+        .add_filter("Lista de mods", &["txt"])
+        .save_file()
+        .await
+    else {
+        return Ok(None);
+    };
+    state
+        .profiles
+        .export_mod_list(&profile_id, file.path())
+        .await
+        .message()?;
+    Ok(Some(file.path().to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
 pub async fn presets_list(state: State<'_, AppState>) -> Result<Vec<ModPreset>, String> {
     Ok(state.presets.list().await)
 }

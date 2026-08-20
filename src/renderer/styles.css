@@ -181,7 +181,7 @@ select option { background: #1a1f18; color: #e7ebe1; }
 .empty-state .button { margin-top: 18px; }
 
 .pack-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; margin: 6px 0 27px; }
-.pack-actions { display: flex; gap: 8px; }
+.pack-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .pack-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 13px; }
 .pack-metrics > div { min-height: 83px; border: 1px solid #2b3128; border-radius: 10px; background: #151914; display: flex; align-items: center; gap: 12px; padding: 15px; }
 .pack-metrics > div > span { width: 35px; height: 35px; display: grid; place-items: center; color: var(--lime); border-radius: 8px; background: #20291a; }

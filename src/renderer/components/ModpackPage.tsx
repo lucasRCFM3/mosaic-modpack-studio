@@ -3,31 +3,33 @@ import type { ModpackProfile, ProjectRef } from '../../shared/domain';
 import { filterInstalledMods } from '../lib/installed-mods';
 import { Icon } from './Icon';
 
-export function ModpackPage({ profile, onDiscover, onEdit, onRemove, onExport, onDeleteProfile }: {
+export function ModpackPage({ profile, onDiscover, onEdit, onRemove, onExport, onExportModList, onDeleteProfile }: {
   profile?: ModpackProfile;
   onDiscover: () => void;
   onEdit: () => void;
   onRemove: (ref: ProjectRef) => void;
   onExport: () => void;
+  onExportModList: () => void;
   onDeleteProfile: () => void;
 }) {
   if (!profile) return null;
-  return <ModpackContent profile={profile} onDiscover={onDiscover} onEdit={onEdit} onRemove={onRemove} onExport={onExport} onDeleteProfile={onDeleteProfile}/>;
+  return <ModpackContent profile={profile} onDiscover={onDiscover} onEdit={onEdit} onRemove={onRemove} onExport={onExport} onExportModList={onExportModList} onDeleteProfile={onDeleteProfile}/>;
 }
 
-function ModpackContent({ profile, onDiscover, onEdit, onRemove, onExport, onDeleteProfile }: {
+function ModpackContent({ profile, onDiscover, onEdit, onRemove, onExport, onExportModList, onDeleteProfile }: {
   profile: ModpackProfile;
   onDiscover: () => void;
   onEdit: () => void;
   onRemove: (ref: ProjectRef) => void;
   onExport: () => void;
+  onExportModList: () => void;
   onDeleteProfile: () => void;
 }) {
   const [query, setQuery] = useState('');
   useEffect(() => setQuery(''), [profile.id]);
   const visibleMods = filterInstalledMods(profile.mods, query);
   return <div className="page modpack-page">
-    <section className="pack-heading"><div><span className="eyebrow"><Icon name="box"/> INSTÂNCIA LOCAL</span><h1>{profile.name}</h1><p>{profile.description || 'Seu modpack modular, reproduzível e verificado.'}</p></div><div className="pack-actions"><button className="button secondary" onClick={onEdit}><Icon name="settings"/> Editar</button><button className="button secondary" onClick={onExport}><Icon name="export"/> Exportar lockfile</button><button className="button primary" onClick={onDiscover}><Icon name="plus"/> Adicionar mods</button></div></section>
+    <section className="pack-heading"><div><span className="eyebrow"><Icon name="box"/> INSTÂNCIA LOCAL</span><h1>{profile.name}</h1><p>{profile.description || 'Seu modpack modular, reproduzível e verificado.'}</p></div><div className="pack-actions"><button className="button secondary" onClick={onEdit}><Icon name="settings"/> Editar</button><button className="button secondary" onClick={onExportModList}><Icon name="export"/> Gerar TXT</button><button className="button secondary" onClick={onExport}><Icon name="export"/> Exportar lockfile</button><button className="button primary" onClick={onDiscover}><Icon name="plus"/> Adicionar mods</button></div></section>
     <div className="pack-metrics"><div><span><Icon name="package"/></span><div><strong>{profile.mods.length}</strong><small>Mods instalados</small></div></div><div><span><Icon name="layers"/></span><div><strong>{profile.mods.filter(({ reason }) => reason !== 'requested').length}</strong><small>Dependências automáticas</small></div></div><div><span><Icon name="shield"/></span><div><strong>{profile.mods.filter(({ hashes }) => hashes.length).length}</strong><small>Arquivos verificáveis</small></div></div><div><span><Icon name="hard-drive"/></span><div><strong>{profile.target.minecraftVersion}</strong><small>{profile.target.loader} · release + beta</small></div></div></div>
     <section className="installed-panel">
       <header><div><h2>Conteúdo instalado</h2><p>Ao remover um mod, dependências obrigatórias órfãs também são removidas; as compartilhadas são preservadas.</p></div><span className="path-chip"><Icon name="folder"/>{profile.instancePath}</span></header>

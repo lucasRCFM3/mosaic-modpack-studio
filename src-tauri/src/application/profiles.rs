@@ -257,7 +257,7 @@ impl ProfileService {
         }
         let lockfile = Lockfile {
             format_version: 1,
-            generated_by: "Mosaic Modpack Studio 0.4.0",
+            generated_by: "Mosaic Modpack Studio 0.4.1",
             generated_at: Utc::now().to_rfc3339(),
             profile: self.get(id).await?,
         };
@@ -265,6 +265,15 @@ impl ProfileService {
             tokio::fs::create_dir_all(parent).await?;
         }
         tokio::fs::write(destination, serde_json::to_vec_pretty(&lockfile)?).await?;
+        Ok(())
+    }
+
+    pub async fn export_mod_list(&self, id: &str, destination: &Path) -> AppResult<()> {
+        let profile = self.get(id).await?;
+        if let Some(parent) = destination.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        tokio::fs::write(destination, render_mod_list(&profile.mods)).await?;
         Ok(())
     }
 }
@@ -320,14 +329,57 @@ fn safe_folder_name(value: &str) -> String {
     }
 }
 
+fn render_mod_list(mods: &[InstalledMod]) -> String {
+    let mut entries: Vec<_> = mods
+        .iter()
+        .map(|item| {
+            let name = item.name.split_whitespace().collect::<Vec<_>>().join(" ");
+            format!("{} ({name})", item.filename)
+        })
+        .collect();
+    entries.sort_by_key(|entry| entry.to_lowercase());
+    if entries.is_empty() {
+        String::new()
+    } else {
+        format!("{}\r\n", entries.join("\r\n"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::validate_profile_metadata;
+    use super::{render_mod_list, validate_profile_metadata};
+    use crate::domain::{InstallReason, InstalledMod, ProviderId};
 
     #[test]
     fn validates_editable_profile_metadata() {
         assert!(validate_profile_metadata("Meu modpack", "Uma descrição").is_ok());
         assert!(validate_profile_metadata("   ", "").is_err());
         assert!(validate_profile_metadata("Pack", &"a".repeat(301)).is_err());
+    }
+
+    #[test]
+    fn renders_a_stable_plain_text_mod_list() {
+        let mod_entry = |filename: &str, name: &str| InstalledMod {
+            provider: ProviderId::Modrinth,
+            project_id: filename.into(),
+            name: name.into(),
+            version_id: "version".into(),
+            version_number: "1".into(),
+            filename: filename.into(),
+            installed_at: String::new(),
+            reason: InstallReason::Requested,
+            hashes: Vec::new(),
+            enabled: true,
+            required_dependencies: Some(Vec::new()),
+        };
+        let mods = vec![
+            mod_entry("sodium.jar", "Sodium"),
+            mod_entry("JEI12021.23-forge.jar", "Just Enough\nItems"),
+        ];
+
+        assert_eq!(
+            render_mod_list(&mods),
+            "JEI12021.23-forge.jar (Just Enough Items)\r\nsodium.jar (Sodium)\r\n"
+        );
     }
 }

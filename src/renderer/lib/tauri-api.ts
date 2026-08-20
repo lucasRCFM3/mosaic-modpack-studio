@@ -20,6 +20,7 @@ export const mosaicApi: MosaicApi = {
     remove: (profileId) => call('profiles_remove', { profileId }),
     chooseFolder: () => call('profiles_choose_folder'),
     export: (profileId) => call('profiles_export', { profileId }),
+    exportModList: (profileId) => call('profiles_export_mod_list', { profileId }),
   },
   presets: {
     list: () => call('presets_list'),
