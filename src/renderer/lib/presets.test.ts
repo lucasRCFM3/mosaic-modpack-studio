@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ModpackProfile, ProjectSummary } from '../../shared/domain';
-import { addCatalogCandidate, initialPresetCandidates, initialPresetSelection } from './presets';
+import { addCatalogCandidate, filterPresetCandidates, initialPresetCandidates, initialPresetSelection } from './presets';
 
 const profile = {
   mods: [{ provider: 'modrinth', projectId: 'installed', name: 'Installed', reason: 'requested' }],
@@ -23,5 +23,12 @@ describe('editor de predefinições', () => {
   it('começa uma nova predefinição sem marcar mods instalados', () => {
     expect(initialPresetCandidates(profile)).toHaveLength(1);
     expect(initialPresetSelection()).toEqual(new Set());
+  });
+
+  it('filtra os mods instalados sem alterar a coleção original', () => {
+    const candidates = addCatalogCandidate(initialPresetCandidates(profile), catalogProject);
+    expect(filterPresetCandidates(candidates, 'installed').map(({ name }) => name)).toEqual(['Installed', 'Not Installed']);
+    expect(filterPresetCandidates(candidates, 'catálogo').map(({ name }) => name)).toEqual(['Not Installed']);
+    expect(candidates).toHaveLength(2);
   });
 });

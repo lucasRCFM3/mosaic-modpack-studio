@@ -380,6 +380,10 @@ select option { background: #1a1f18; color: #e7ebe1; }
 .preset-picker-title strong { font-size: 14px; }
 .preset-picker-title small, .preset-picker-title > span { color: #737c6f; font-size: 11px; }
 .preset-picker { margin: 0 21px; border: 1px solid #2b3128; border-radius: 9px; max-height: 310px; overflow-y: auto; }
+.preset-local-search { height: 46px; margin: 0 21px 8px; display: flex; align-items: center; gap: 9px; padding: 0 11px; border: 1px solid #30372d; border-radius: 8px; background: #1a1f18; }
+.preset-local-search > svg { width: 17px; color: #8fa874; }
+.preset-local-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: #e1e6dc; font-size: 13px; }
+.preset-local-search input::placeholder { color: #667062; }
 .preset-picker > label { min-height: 58px; display: flex; align-items: center; gap: 11px; padding: 8px 11px; border-bottom: 1px solid #252b22; cursor: pointer; }
 .preset-picker > label:last-child { border-bottom: 0; }
 .preset-picker > label:hover { background: #1a1f18; }

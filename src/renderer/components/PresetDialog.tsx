@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ModPreset, ModpackProfile, PresetEntry, ProjectSummary, SavePresetInput } from '../../shared/domain';
 import { projectKey } from '../../shared/domain';
-import { addCatalogCandidate, initialPresetCandidates, initialPresetSelection } from '../lib/presets';
+import { addCatalogCandidate, filterPresetCandidates, initialPresetCandidates, initialPresetSelection } from '../lib/presets';
 import { Icon } from './Icon';
 
 export function PresetDialog({ profile, preset, onClose, onSave }: {
@@ -15,10 +15,12 @@ export function PresetDialog({ profile, preset, onClose, onSave }: {
   const [description, setDescription] = useState(preset?.description ?? 'Minha base padrão para novos modpacks.');
   const [selected, setSelected] = useState(() => initialPresetSelection(preset));
   const [query, setQuery] = useState('');
+  const [candidateQuery, setCandidateQuery] = useState('');
   const [results, setResults] = useState<ProjectSummary[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchWarning, setSearchWarning] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const visibleCandidates = filterPresetCandidates(candidates, candidateQuery);
 
   useEffect(() => {
     const normalized = query.trim();
@@ -98,12 +100,13 @@ export function PresetDialog({ profile, preset, onClose, onSave }: {
           </div> : null}
         </div>
         <div className="preset-picker-title"><div><strong>Mods da predefinição</strong><small>Selecione projetos, não dependências acidentais.</small></div><span>{selected.size} selecionado{selected.size === 1 ? '' : 's'}</span></div>
+        <label className="preset-local-search"><Icon name="search"/><input value={candidateQuery} onChange={(event) => setCandidateQuery(event.target.value)} placeholder="Filtrar mods instalados e selecionados…"/>{candidateQuery ? <button className="icon-button" onClick={() => setCandidateQuery('')} aria-label="Limpar filtro"><Icon name="x"/></button> : null}</label>
         <div className="preset-picker">
-          {candidates.length ? candidates.map((entry) => <label key={projectKey(entry.project)}>
+          {visibleCandidates.length ? visibleCandidates.map((entry) => <label key={projectKey(entry.project)}>
             <input type="checkbox" checked={selected.has(projectKey(entry.project))} onChange={() => toggle(entry)}/>
             <span className="plan-icon">{entry.name.slice(0, 1)}</span>
             <span><strong>{entry.name}</strong><small>{entry.project.provider} · {entry.reason}</small></span>
-          </label>) : <div className="preset-picker-empty"><Icon name="search"/><span><strong>Busque um mod acima</strong><small>Você não precisa instalá-lo antes de criar a predefinição.</small></span></div>}
+          </label>) : <div className="preset-picker-empty"><Icon name="search"/><span><strong>{candidateQuery ? 'Nenhum mod encontrado' : 'Busque um mod acima'}</strong><small>{candidateQuery ? 'Tente outro nome, provedor ou tipo.' : 'Você não precisa instalá-lo antes de criar a predefinição.'}</small></span></div>}
         </div>
       </div>
       <footer><button className="button ghost" onClick={onClose}>Cancelar</button><button className="button primary" disabled={!name.trim() || selected.size === 0 || busy} onClick={() => void save()}>{busy ? <span className="spinner dark"/> : <Icon name="check"/>} {preset ? 'Salvar alterações' : 'Criar predefinição'}</button></footer>

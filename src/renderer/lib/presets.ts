@@ -29,3 +29,10 @@ export function addCatalogCandidate(current: PresetCandidate[], project: Project
 export function initialPresetSelection(preset?: ModPreset): Set<string> {
   return new Set(preset?.entries.map((entry) => projectKey(entry.project)) ?? []);
 }
+
+export function filterPresetCandidates(candidates: PresetCandidate[], query: string): PresetCandidate[] {
+  const normalized = query.trim().toLocaleLowerCase('pt-BR');
+  if (!normalized) return candidates;
+  return candidates.filter((entry) => [entry.name, entry.project.provider, entry.reason]
+    .some((value) => value.toLocaleLowerCase('pt-BR').includes(normalized)));
+}
