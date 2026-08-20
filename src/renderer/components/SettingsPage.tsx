@@ -9,12 +9,15 @@ export function SettingsPage({ settings, onSave }: { settings: AppSettings; onSa
   const [concurrency, setConcurrency] = useState(settings.downloadConcurrency);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   useEffect(() => { setOptional(settings.includeOptionalDependencies); setConcurrency(settings.downloadConcurrency); }, [settings]);
   const save = async () => {
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setSuccess('');
     try {
-      await onSave({ curseForgeApiKey: apiKey || undefined, clearCurseForgeApiKey: clearKey, includeOptionalDependencies: optional, downloadConcurrency: concurrency });
+      const submittedKey = apiKey.trim();
+      await onSave({ curseForgeApiKey: submittedKey || undefined, clearCurseForgeApiKey: clearKey, includeOptionalDependencies: optional, downloadConcurrency: concurrency });
       setApiKey(''); setClearKey(false);
+      setSuccess(clearKey ? 'Chave removida e ajustes salvos.' : submittedKey ? 'Chave protegida no cofre do Windows e ajustes salvos.' : 'Ajustes salvos com sucesso.');
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Não foi possível salvar.'); }
     finally { setBusy(false); }
   };
@@ -22,7 +25,7 @@ export function SettingsPage({ settings, onSave }: { settings: AppSettings; onSa
     <div className="settings-grid">
       <section className="settings-card provider-settings"><header><span className="settings-icon orange">CF</span><div><h2>CurseForge</h2><p>Catálogo complementar com autenticação oficial.</p></div><span className={`connection-badge ${settings.curseForgeConfigured ? 'connected' : ''}`}>{settings.curseForgeConfigured ? 'Conectado' : 'Não configurado'}</span></header>
         <div className="terms-note"><Icon name="alert"/><p><strong>Antes de conectar</strong>A CurseForge exige uma chave aprovada e seus termos limitam apps concorrentes. Use apenas uma chave que você tem autorização para usar. Alguns autores também bloqueiam downloads externos.</p></div>
-        <label className="setting-field"><span>CHAVE DA API</span><input type="password" autoComplete="off" value={apiKey} disabled={clearKey} onChange={(event) => setApiKey(event.target.value)} placeholder={settings.curseForgeConfigured ? '•••••••••••••••• (já armazenada)' : 'Cole sua chave oficial aqui'}/><small>A chave é criptografada pelo cofre do sistema operacional e nunca vai para a interface depois de salva.</small></label>
+        <label className="setting-field"><span>CHAVE DA API</span><input type="password" autoComplete="off" value={apiKey} disabled={clearKey} onChange={(event) => { setApiKey(event.target.value); setError(''); setSuccess(''); }} placeholder={settings.curseForgeConfigured ? '•••••••••••••••• (já armazenada)' : 'Cole sua chave oficial aqui'}/><small>A chave é protegida pelo Gerenciador de Credenciais do Windows e nunca volta para a interface depois de salva.</small></label>
         {settings.curseForgeConfigured ? <label className="check-row danger-check"><input type="checkbox" checked={clearKey} onChange={(event) => setClearKey(event.target.checked)}/><span>Remover a chave salva</span></label> : null}
         <a className="text-link" href="https://support.curseforge.com/support/solutions/articles/9000208346-about-the-curseforge-api-and-how-to-apply-for-a-key">Como solicitar uma chave oficial <Icon name="external"/></a>
       </section>
@@ -31,9 +34,10 @@ export function SettingsPage({ settings, onSave }: { settings: AppSettings; onSa
         <div className="setting-field"><span>DOWNLOADS SIMULTÂNEOS</span><div className="range-row"><input type="range" min="1" max="6" value={concurrency} onChange={(event) => setConcurrency(Number(event.target.value))}/><strong>{concurrency}</strong></div><small>Mais paralelismo é mais rápido, mas usa mais banda e conexões.</small></div>
         <div className="immutable-setting"><Icon name="shield"/><span><strong>Verificação de integridade sempre ativa</strong><small>Não pode ser desativada; arquivos com hash divergente são descartados.</small></span></div>
       </section>
-      <section className="settings-card about-card"><header><span className="settings-icon violet"><span className="brand-mark tiny"><span/><span/><span/><span/></span></span><div><h2>Mosaic Modpack Studio</h2><p>Versão 0.3.4 · Rust + Tauri</p></div></header><p>Seus perfis, chaves e arquivos permanecem no seu computador. O Mosaic não possui telemetria e só fala diretamente com as APIs selecionadas.</p><div className="about-points"><span><Icon name="check"/> Segredos fora do renderer</span><span><Icon name="check"/> Downloads HTTPS atômicos</span><span><Icon name="check"/> Lockfile reproduzível</span></div></section>
+      <section className="settings-card about-card"><header><span className="settings-icon violet"><span className="brand-mark tiny"><span/><span/><span/><span/></span></span><div><h2>Mosaic Modpack Studio</h2><p>Versão 0.3.5 · Rust + Tauri</p></div></header><p>Seus perfis, chaves e arquivos permanecem no seu computador. O Mosaic não possui telemetria e só fala diretamente com as APIs selecionadas.</p><div className="about-points"><span><Icon name="check"/> Segredos fora do renderer</span><span><Icon name="check"/> Downloads HTTPS atômicos</span><span><Icon name="check"/> Lockfile reproduzível</span></div></section>
     </div>
     {error ? <div className="inline-error"><Icon name="alert"/>{error}</div> : null}
+    {success ? <div className="inline-success" role="status"><Icon name="check"/>{success}</div> : null}
     <div className="settings-footer"><span>Alterações entram em vigor na próxima busca ou instalação.</span><button className="button primary" disabled={busy} onClick={() => void save()}>{busy ? <span className="spinner dark"/> : <Icon name="check"/>} Salvar ajustes</button></div>
   </div>;
 }

@@ -201,7 +201,7 @@ pub async fn mods_open_project(
 pub async fn settings_get(state: State<'_, AppState>) -> Result<AppSettings, String> {
     let settings = state.store.snapshot().await.settings;
     Ok(AppSettings {
-        curse_forge_configured: state.secrets.get_curseforge_key().is_some(),
+        curse_forge_configured: state.secrets.get_curseforge_key().message()?.is_some(),
         include_optional_dependencies: settings.include_optional_dependencies,
         download_concurrency: settings.download_concurrency,
         telemetry: false,

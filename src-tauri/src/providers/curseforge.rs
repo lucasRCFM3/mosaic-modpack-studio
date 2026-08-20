@@ -113,7 +113,7 @@ impl CurseForgeProvider {
         path: &str,
         query: &[(&str, String)],
     ) -> AppResult<T> {
-        let key = self.secrets.get_curseforge_key().ok_or_else(|| {
+        let key = self.secrets.get_curseforge_key()?.ok_or_else(|| {
             AppError::Message(
                 "Configure sua chave da CurseForge em Ajustes para usar este catálogo.".into(),
             )
@@ -237,7 +237,7 @@ impl ModProvider for CurseForgeProvider {
         ProviderId::Curseforge
     }
     fn is_enabled(&self) -> bool {
-        self.secrets.get_curseforge_key().is_some()
+        matches!(self.secrets.get_curseforge_key(), Ok(Some(_)))
     }
 
     async fn search(&self, filters: &SearchFilters) -> AppResult<ProviderSearchResult> {

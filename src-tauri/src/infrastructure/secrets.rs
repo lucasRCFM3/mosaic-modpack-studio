@@ -19,16 +19,33 @@ impl SecretStore {
         })
     }
 
-    pub fn get_curseforge_key(&self) -> Option<String> {
-        self.entry().ok()?.get_password().ok()
+    pub fn get_curseforge_key(&self) -> AppResult<Option<String>> {
+        match self.entry()?.get_password() {
+            Ok(value) => Ok(Some(value)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(error) => Err(AppError::Message(format!(
+                "Não foi possível ler a chave no cofre do sistema: {error}"
+            ))),
+        }
     }
 
     pub fn set_curseforge_key(&self, value: &str) -> AppResult<()> {
-        self.entry()?.set_password(value).map_err(|error| {
+        let entry = self.entry()?;
+        entry.set_password(value).map_err(|error| {
             AppError::Message(format!(
                 "Não foi possível proteger a chave no cofre do sistema: {error}"
             ))
-        })
+        })?;
+
+        match entry.get_password() {
+            Ok(saved) if saved == value => Ok(()),
+            Ok(_) => Err(AppError::Message(
+                "O cofre do sistema não confirmou a chave salva.".into(),
+            )),
+            Err(error) => Err(AppError::Message(format!(
+                "A chave foi enviada ao cofre, mas não pôde ser confirmada: {error}"
+            ))),
+        }
     }
 
     pub fn clear_curseforge_key(&self) -> AppResult<()> {

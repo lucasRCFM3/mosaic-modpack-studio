@@ -288,6 +288,8 @@ select option { background: #1a1f18; color: #e7ebe1; }
 .settings-footer > span { color: #6c7468; font-size: 8px; }
 .inline-error { margin-top: 10px; border: 1px solid #57302c; color: #d88a82; background: #241715; padding: 10px; border-radius: 7px; display: flex; gap: 7px; align-items: center; font-size: 8px; }
 .inline-error svg { width: 14px; }
+.inline-success { margin-top: 10px; border: 1px solid #34492f; color: #9bc790; background: #192318; padding: 10px; border-radius: 7px; display: flex; gap: 7px; align-items: center; font-size: 8px; }
+.inline-success svg { width: 14px; color: var(--lime); }
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 20; background: rgba(4, 6, 3, .76); backdrop-filter: blur(8px); display: grid; place-items: center; padding: 35px; animation: fade-in .15s ease; }
 @keyframes fade-in { from { opacity: 0; } }
@@ -520,7 +522,7 @@ body { font-size: 15px; }
 .immutable-setting small { font-size: 11px; }
 .about-card > p { font-size: 13px; }
 .about-points { font-size: 12px; }
-.settings-footer > span, .inline-error { font-size: 12px; }
+.settings-footer > span, .inline-error, .inline-success { font-size: 12px; }
 
 .modal { width: min(780px, 100%); }
 .modal > header h2 { font-size: 21px; }
