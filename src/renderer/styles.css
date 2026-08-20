@@ -195,6 +195,13 @@ select option { background: #1a1f18; color: #e7ebe1; }
 .installed-panel > header { min-height: 72px; padding: 15px 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #282e25; }
 .installed-panel > header h2 { margin: 0; font-size: 13px; }
 .installed-panel > header p { margin: 5px 0 0; font-size: 8px; color: #6c7468; }
+.installed-toolbar { min-height: 58px; display: flex; align-items: center; gap: 14px; padding: 9px 18px; border-bottom: 1px solid #282e25; background: #161a15; }
+.installed-toolbar > label { height: 40px; flex: 1; display: flex; align-items: center; gap: 9px; padding: 0 10px; border: 1px solid #30372d; border-radius: 8px; background: #1b2019; }
+.installed-toolbar > label > svg { width: 17px; color: #8fa874; }
+.installed-toolbar input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: #e1e6dc; font-size: 13px; }
+.installed-toolbar input::placeholder { color: #667062; }
+.installed-toolbar > span { color: #788174; font-size: 12px; white-space: nowrap; }
+.installed-no-results { min-height: 260px; }
 .path-chip { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #7b8375; font-size: 8px; padding: 7px 9px; background: #1b2019; border: 1px solid #2d342a; border-radius: 6px; }
 .path-chip svg { width: 12px; vertical-align: middle; margin-right: 5px; }
 .installed-table-head, .installed-row { display: grid; grid-template-columns: minmax(220px, 2fr) minmax(90px, .7fr) minmax(90px, .7fr) minmax(140px, 1fr) 65px; align-items: center; gap: 15px; padding: 0 18px; }

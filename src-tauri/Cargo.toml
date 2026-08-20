@@ -1,6 +1,6 @@
 [package]
 name = "mosaic-modpack-studio"
-version = "0.3.3"
+version = "0.3.4"
 description = "Gerenciador local-first de modpacks para Modrinth e CurseForge"
 authors = ["Mosaic contributors"]
 edition = "2024"

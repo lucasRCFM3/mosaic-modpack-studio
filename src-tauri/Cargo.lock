@@ -2206,7 +2206,7 @@ dependencies = [
 
 [[package]]
 name = "mosaic-modpack-studio"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "async-recursion",
  "async-trait",
