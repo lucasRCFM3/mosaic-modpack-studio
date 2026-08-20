@@ -31,6 +31,7 @@ export const mosaicApi: MosaicApi = {
   },
   mods: {
     resolve: (profileId, project, selectedOptional = []) => call('mods_resolve', { profileId, project, selectedOptional }),
+    resolveMany: (profileId, projects, selectedOptional = []) => call('mods_resolve_many', { profileId, projects, selectedOptional }),
     install: (profileId, planId) => call('mods_install', { profileId, planId }),
     remove: (profileId, project) => call('mods_remove', { profileId, project }),
     openProject: (project) => call('mods_open_project', { project }),

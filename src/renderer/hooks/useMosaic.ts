@@ -15,8 +15,10 @@ import type {
   UpdateProfileInput,
 } from '../../shared/domain';
 import { toggleOptionalProject } from '../lib/dependencies';
+import { addProjectToQueue, loadInstallQueues, projectKey, removeProjectFromQueue, removeProjectsFromQueue } from '../lib/install-queue';
 
 const fallbackVersions = ['1.21.8', '1.21.7', '1.21.5', '1.21.4', '1.21.1', '1.20.6', '1.20.4', '1.20.1', '1.19.2', '1.18.2', '1.16.5'];
+const installQueuesStorageKey = 'mosaic:install-queues:v1';
 const emptyResult: CatalogSearchResult = {
   projects: [], total: 0, warnings: [],
   providers: {
@@ -39,8 +41,10 @@ export function useMosaic() {
   const [searching, setSearching] = useState(true);
   const [resolvingKey, setResolvingKey] = useState<string>();
   const [resolvingPresetId, setResolvingPresetId] = useState<string>();
+  const [resolvingBatch, setResolvingBatch] = useState(false);
+  const [installQueues, setInstallQueues] = useState<Record<string, ProjectSummary[]>>(() => loadInstallQueues(localStorage.getItem(installQueuesStorageKey)));
   const [plan, setPlan] = useState<ResolutionPlan>();
-  const [resolutionSource, setResolutionSource] = useState<{ kind: 'project'; project: ProjectRef } | { kind: 'preset'; presetId: string }>();
+  const [resolutionSource, setResolutionSource] = useState<{ kind: 'project'; project: ProjectRef } | { kind: 'preset'; presetId: string } | { kind: 'batch'; projects: ProjectRef[] }>();
   const [installing, setInstalling] = useState(false);
   const [updatingPlan, setUpdatingPlan] = useState(false);
   const [progress, setProgress] = useState<Record<string, InstallProgress>>({});
@@ -50,6 +54,11 @@ export function useMosaic() {
     () => profiles.find(({ id }) => id === currentProfileId) ?? profiles[0],
     [profiles, currentProfileId],
   );
+  const installedKeys = useMemo(() => new Set(currentProfile?.mods.map((mod) => projectKey(mod)) ?? []), [currentProfile]);
+  const queuedProjects = currentProfile ? installQueues[currentProfile.id] ?? [] : [];
+  const queuedKeys = useMemo(() => new Set(queuedProjects.map(projectKey)), [queuedProjects]);
+
+  useEffect(() => localStorage.setItem(installQueuesStorageKey, JSON.stringify(installQueues)), [installQueues]);
 
   const refreshProfiles = useCallback(async () => {
     const loaded = await window.mosaic.profiles.list();
@@ -104,6 +113,11 @@ export function useMosaic() {
 
   const removeProfile = async (id: string) => {
     await window.mosaic.profiles.remove(id);
+    setInstallQueues((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
     await refreshProfiles();
     setNotice({ tone: 'info', text: 'Perfil removido. Os arquivos da instância foram preservados.' });
   };
@@ -131,6 +145,50 @@ export function useMosaic() {
     }
   };
 
+  const addToInstallQueue = (project: ProjectSummary) => {
+    if (!currentProfile || installedKeys.has(projectKey(project))) return;
+    const currentQueue = installQueues[currentProfile.id] ?? [];
+    if (currentQueue.length >= 100) {
+      setNotice({ tone: 'error', text: 'A lista aceita no máximo 100 mods por instalação.' });
+      return;
+    }
+    setInstallQueues((current) => ({
+      ...current,
+      [currentProfile.id]: addProjectToQueue(current[currentProfile.id] ?? [], project),
+    }));
+  };
+
+  const removeFromInstallQueue = (project: ProjectRef) => {
+    if (!currentProfile) return;
+    setInstallQueues((current) => ({
+      ...current,
+      [currentProfile.id]: removeProjectFromQueue(current[currentProfile.id] ?? [], project),
+    }));
+  };
+
+  const clearInstallQueue = () => {
+    if (!currentProfile) return;
+    setInstallQueues((current) => ({ ...current, [currentProfile.id]: [] }));
+  };
+
+  const resolveInstallQueue = async () => {
+    if (!currentProfile || !queuedProjects.length) return;
+    const roots = queuedProjects.map(({ provider, projectId }) => ({ provider, projectId }));
+    setResolvingBatch(true);
+    try {
+      let resolved = await window.mosaic.mods.resolveMany(currentProfile.id, roots, []);
+      if (settings.includeOptionalDependencies && resolved.optionalDependencies.length) {
+        resolved = await window.mosaic.mods.resolveMany(currentProfile.id, roots, resolved.optionalDependencies.map(({ project }) => project));
+      }
+      setResolutionSource({ kind: 'batch', projects: roots });
+      setPlan(resolved);
+    } catch (error) {
+      setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível verificar a lista de instalação.' });
+    } finally {
+      setResolvingBatch(false);
+    }
+  };
+
   const toggleOptionalDependency = async (project: ProjectRef) => {
     if (!currentProfile || !plan || !resolutionSource) return;
     const next = toggleOptionalProject(plan, project);
@@ -138,7 +196,9 @@ export function useMosaic() {
     try {
       setPlan(resolutionSource.kind === 'project'
         ? await window.mosaic.mods.resolve(currentProfile.id, resolutionSource.project, next)
-        : await window.mosaic.presets.resolve(currentProfile.id, resolutionSource.presetId, next));
+        : resolutionSource.kind === 'preset'
+          ? await window.mosaic.presets.resolve(currentProfile.id, resolutionSource.presetId, next)
+          : await window.mosaic.mods.resolveMany(currentProfile.id, resolutionSource.projects, next));
     }
     catch (error) { setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível atualizar as opcionais.' }); }
     finally { setUpdatingPlan(false); }
@@ -151,6 +211,10 @@ export function useMosaic() {
     try {
       const result = await window.mosaic.mods.install(currentProfile.id, plan.id);
       setProfiles((current) => current.map((profile) => profile.id === result.profile.id ? result.profile : profile));
+      setInstallQueues((current) => ({
+        ...current,
+        [currentProfile.id]: removeProjectsFromQueue(current[currentProfile.id] ?? [], result.profile.mods),
+      }));
       setPlan(undefined);
       setResolutionSource(undefined);
       const failed = result.failed.length ? ` ${result.failed.length} falharam.` : '';
@@ -225,11 +289,10 @@ export function useMosaic() {
     } finally { setResolvingPresetId(undefined); }
   };
 
-  const installedKeys = useMemo(() => new Set(currentProfile?.mods.map((mod) => `${mod.provider}:${mod.projectId}`) ?? []), [currentProfile]);
-
   return {
     profiles, currentProfile, presets, settings, gameVersions, filters, setFilters, catalog, searching,
-    resolvingKey, resolvingPresetId, plan, setPlan, installing, updatingPlan, progress, notice, setNotice, installedKeys,
-    chooseProfile, createProfile, updateProfile, removeProfile, savePreset, removePreset, resolvePreset, resolveProject, toggleOptionalDependency, installPlan, removeMod, saveSettings, exportProfile, exportModList,
+    resolvingKey, resolvingPresetId, resolvingBatch, plan, setPlan, installing, updatingPlan, progress, notice, setNotice, installedKeys,
+    queuedProjects, queuedKeys,
+    chooseProfile, createProfile, updateProfile, removeProfile, savePreset, removePreset, resolvePreset, resolveProject, addToInstallQueue, removeFromInstallQueue, clearInstallQueue, resolveInstallQueue, toggleOptionalDependency, installPlan, removeMod, saveSettings, exportProfile, exportModList,
   };
 }

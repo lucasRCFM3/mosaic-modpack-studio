@@ -3,11 +3,13 @@ import { Icon } from './Icon';
 
 const compact = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
 
-export function ProjectCard({ project, installed, busy, onAdd, onOpen }: {
+export function ProjectCard({ project, installed, queued, busy, onAdd, onQueue, onOpen }: {
   project: ProjectSummary;
   installed: boolean;
+  queued: boolean;
   busy: boolean;
   onAdd: () => void;
+  onQueue: () => void;
   onOpen: () => void;
 }) {
   return <article className="project-card">
@@ -23,9 +25,7 @@ export function ProjectCard({ project, installed, busy, onAdd, onOpen }: {
     <footer>
       <span title="Downloads"><Icon name="download"/> {compact.format(project.downloads)}</span>
       <span title="Ambiente">{project.side === 'client' ? <Icon name="monitor"/> : project.side === 'server' ? <Icon name="server"/> : <Icon name="layers"/>} {project.side === 'both' ? 'Cliente + servidor' : project.side === 'client' ? 'Cliente' : project.side === 'server' ? 'Servidor' : 'Universal'}</span>
-      <button disabled={busy || installed} className={installed ? 'installed' : ''} onClick={onAdd}>
-        {busy ? <><span className="spinner"/> Resolvendo</> : installed ? <><Icon name="check"/> Instalado</> : <><Icon name="plus"/> Adicionar</>}
-      </button>
+      {installed ? <button disabled className="installed"><Icon name="check"/> Instalado</button> : <div className="project-actions"><button disabled={busy || queued} className={queued ? 'queued' : 'queue'} onClick={onQueue}>{queued ? <><Icon name="check"/> Na lista</> : <><Icon name="plus"/> À lista</>}</button><button disabled={busy} onClick={onAdd}>{busy ? <><span className="spinner"/> Resolvendo</> : <><Icon name="download"/> Adicionar</>}</button></div>}
     </footer>
   </article>;
 }

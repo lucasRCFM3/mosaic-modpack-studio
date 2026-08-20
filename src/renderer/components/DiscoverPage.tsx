@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react';
-import type { CatalogSearchResult, ModpackProfile, ProjectSummary, SearchFilters } from '../../shared/domain';
+import type { CatalogSearchResult, ModpackProfile, ProjectRef, ProjectSummary, SearchFilters } from '../../shared/domain';
 import { Icon } from './Icon';
+import { InstallQueue } from './InstallQueue';
 import { ProjectCard } from './ProjectCard';
 
 interface DiscoverPageProps {
@@ -12,10 +13,17 @@ interface DiscoverPageProps {
   searching: boolean;
   resolvingKey?: string;
   installedKeys: Set<string>;
+  queuedProjects: ProjectSummary[];
+  queuedKeys: Set<string>;
+  resolvingBatch: boolean;
   onAdd: (project: ProjectSummary) => void;
+  onQueue: (project: ProjectSummary) => void;
+  onRemoveFromQueue: (project: ProjectRef) => void;
+  onClearQueue: () => void;
+  onInstallQueue: () => void;
 }
 
-export function DiscoverPage({ profile, filters, setFilters, versions, catalog, searching, resolvingKey, installedKeys, onAdd }: DiscoverPageProps) {
+export function DiscoverPage({ profile, filters, setFilters, versions, catalog, searching, resolvingKey, installedKeys, queuedProjects, queuedKeys, resolvingBatch, onAdd, onQueue, onRemoveFromQueue, onClearQueue, onInstallQueue }: DiscoverPageProps) {
   const toggleProvider = (provider: 'modrinth' | 'curseforge') => setFilters((current) => {
     const has = current.providers.includes(provider);
     if (has && current.providers.length === 1) return current;
@@ -37,6 +45,8 @@ export function DiscoverPage({ profile, filters, setFilters, versions, catalog, 
       </div>
     </section>
 
+    <InstallQueue projects={queuedProjects} busy={resolvingBatch} onRemove={onRemoveFromQueue} onClear={onClearQueue} onInstall={onInstallQueue}/>
+
     <section className="result-header">
       <div><h2>{filters.query ? `Resultados para “${filters.query}”` : 'Populares para o seu perfil'}</h2><p>{searching ? 'Consultando catálogos…' : `${catalog.projects.length} resultados compatíveis nesta página`}</p></div>
       <label>ORDENAR POR<select value={filters.sort} onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value as SearchFilters['sort'] }))}><option value="relevance">Relevância</option><option value="downloads">Mais baixados</option><option value="updated">Atualizados</option><option value="newest">Mais novos</option></select></label>
@@ -48,7 +58,7 @@ export function DiscoverPage({ profile, filters, setFilters, versions, catalog, 
     {searching && !catalog.projects.length ? <div className="card-grid">{Array.from({ length: 6 }, (_, index) => <div className="project-card skeleton" key={index}/>)}</div> : catalog.projects.length ? <div className={`card-grid ${searching ? 'refreshing' : ''}`}>
       {catalog.projects.map((project) => {
         const key = `${project.provider}:${project.projectId}`;
-        return <ProjectCard key={key} project={project} installed={installedKeys.has(key)} busy={resolvingKey === key} onAdd={() => onAdd(project)} onOpen={() => void window.mosaic.mods.openProject(project)}/>;
+        return <ProjectCard key={key} project={project} installed={installedKeys.has(key)} queued={queuedKeys.has(key)} busy={resolvingKey === key} onAdd={() => onAdd(project)} onQueue={() => onQueue(project)} onOpen={() => void window.mosaic.mods.openProject(project)}/>;
       })}
     </div> : <div className="empty-state"><span><Icon name="search"/></span><h3>Nenhum mod compatível</h3><p>Tente outro termo, loader ou versão do Minecraft.</p></div>}
   </div>;

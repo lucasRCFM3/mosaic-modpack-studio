@@ -172,6 +172,31 @@ pub async fn mods_resolve(
 }
 
 #[tauri::command]
+pub async fn mods_resolve_many(
+    state: State<'_, AppState>,
+    profile_id: String,
+    projects: Vec<ProjectRef>,
+    selected_optional: Option<Vec<ProjectRef>>,
+) -> Result<ResolutionPlan, String> {
+    validate_uuid(&profile_id)?;
+    if projects.is_empty() {
+        return Err("Adicione pelo menos um mod à lista.".into());
+    }
+    if projects.len() > 100 {
+        return Err("A lista pode conter no máximo 100 mods por instalação.".into());
+    }
+    for project in &projects {
+        validate_project(project)?;
+    }
+    let profile = state.profiles.get(&profile_id).await.message()?;
+    state
+        .resolver
+        .resolve_many(&profile, projects, selected_optional.unwrap_or_default())
+        .await
+        .message()
+}
+
+#[tauri::command]
 pub async fn mods_install(
     app: AppHandle,
     state: State<'_, AppState>,

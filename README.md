@@ -15,6 +15,7 @@ Aplicativo desktop local-first, construído com **Rust + Tauri 2 + React**, para
 - dependências opcionais exibidas para escolha e desmarcadas por padrão;
 - detecção de ciclos, incompatibilidades, versões ausentes e distribuição bloqueada;
 - revisão do plano antes de qualquer escrita em disco;
+- fila de instalação persistente por perfil para selecionar vários mods durante a busca e resolver todo o lote de uma vez;
 - downloads concorrentes por HTTPS, arquivo `.part`, verificação de hash e renomeação;
 - perfis independentes com nome e descrição editáveis, registro dos mods e lockfile JSON exportável;
 - predefinições reutilizáveis que verificam versões compatíveis e resolvem todas as dependências em lote;
@@ -32,6 +33,10 @@ Aplicativo desktop local-first, construído com **Rust + Tauri 2 + React**, para
 | Incompatível (`incompatible`) | Bloqueia o plano quando o conflito está presente |
 
 Existe uma preferência para pré-selecionar opcionais, mas ela é **opt-in** e vem desativada em instalações novas.
+
+## Instalação em lote
+
+Em **Descobrir**, use **À lista** nos projetos desejados e continue pesquisando normalmente. A lista permanece vinculada ao modpack atual e permite remover itens ou limpar tudo. Ao clicar em **Instalar todos**, o Mosaic cria um único plano, elimina projetos e dependências duplicados, verifica a compatibilidade de todo o conjunto e baixa as dependências obrigatórias após a confirmação.
 
 ## Predefinições de mods
 

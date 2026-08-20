@@ -34,6 +34,7 @@ pub fn run() {
             presets_remove,
             presets_resolve,
             mods_resolve,
+            mods_resolve_many,
             mods_install,
             mods_remove,
             mods_open_project,
