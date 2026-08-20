@@ -32,7 +32,7 @@ export default function App() {
         {view === 'settings' ? <SettingsPage settings={mosaic.settings} onSave={mosaic.saveSettings}/> : null}
       </div>
     </main>
-    {mosaic.plan ? <ResolutionDialog plan={mosaic.plan} installing={mosaic.installing} updatingPlan={mosaic.updatingPlan} progress={mosaic.progress} onClose={() => mosaic.setPlan(undefined)} onToggleOptional={(project) => void mosaic.toggleOptionalDependency(project)} onInstall={() => void mosaic.installPlan()}/> : null}
+    {mosaic.plan ? <ResolutionDialog plan={mosaic.plan} installing={mosaic.installing} updatingPlan={mosaic.updatingPlan} progress={mosaic.progress} onClose={() => mosaic.setPlan(undefined)} onToggleOptional={(project) => void mosaic.toggleOptionalDependency(project)} onSetAllOptional={(selected) => void mosaic.setAllOptionalDependencies(selected)} onInstall={() => void mosaic.installPlan()}/> : null}
     {creating ? <CreateProfileDialog versions={mosaic.gameVersions} onClose={() => setCreating(false)} onCreate={mosaic.createProfile}/> : null}
     {editing && mosaic.currentProfile ? <EditProfileDialog profile={mosaic.currentProfile} onClose={() => setEditing(false)} onSave={mosaic.updateProfile}/> : null}
     {presetDraft && mosaic.currentProfile ? <PresetDialog profile={mosaic.currentProfile} preset={presetDraft === 'new' ? undefined : presetDraft} onClose={() => setPresetDraft(undefined)} onSave={mosaic.savePreset}/> : null}

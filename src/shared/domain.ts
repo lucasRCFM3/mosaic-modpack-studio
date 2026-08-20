@@ -102,6 +102,7 @@ export type ResolutionIssueCode =
   | 'INCOMPATIBLE_MOD'
   | 'DEPENDENCY_CYCLE'
   | 'DISTRIBUTION_RESTRICTED'
+  | 'PROVIDER_FALLBACK'
   | 'PROVIDER_ERROR';
 
 export interface ResolutionIssue {
@@ -118,6 +119,7 @@ export interface ResolutionPlan {
   edges: ResolutionEdge[];
   issues: ResolutionIssue[];
   optionalDependencies: OptionalDependencyChoice[];
+  manualDownloads: ManualDownload[];
   downloadableBytes: number;
   canInstall: boolean;
 }
@@ -127,6 +129,11 @@ export interface OptionalDependencyChoice {
   name: string;
   parentKey: string;
   selected: boolean;
+}
+
+export interface ManualDownload {
+  project: ProjectSummary;
+  reason: ResolutionNode['reason'];
 }
 
 export interface InstalledMod extends ProjectRef {

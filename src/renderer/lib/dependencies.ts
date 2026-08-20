@@ -13,3 +13,7 @@ export function toggleOptionalProject(plan: ResolutionPlan, target: ProjectRef):
     ? selected.filter((project) => refKey(project) !== key)
     : [...selected, target];
 }
+
+export function setAllOptionalProjects(plan: ResolutionPlan, selected: boolean): ProjectRef[] {
+  return selected ? plan.optionalDependencies.map(({ project }) => project) : [];
+}

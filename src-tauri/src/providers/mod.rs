@@ -54,4 +54,11 @@ impl ProviderRegistry {
             ProviderId::Curseforge => self.curseforge.clone(),
         }
     }
+
+    pub fn alternate(&self, id: ProviderId) -> Arc<dyn ModProvider> {
+        self.get(match id {
+            ProviderId::Modrinth => ProviderId::Curseforge,
+            ProviderId::Curseforge => ProviderId::Modrinth,
+        })
+    }
 }

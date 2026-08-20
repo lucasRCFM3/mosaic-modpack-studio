@@ -348,6 +348,8 @@ select option { background: #1a1f18; color: #e7ebe1; }
 .plan-list-title { height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 0 11px; background: #171b15; color: #5f675c; font-size: 6px; letter-spacing: .1em; font-weight: 800; }
 .plan-list-title span:last-child { letter-spacing: 0; text-transform: none; font-weight: 500; }
 .plan-item { min-height: 53px; padding: 8px 11px; display: flex; align-items: center; gap: 10px; border-top: 1px solid #252b22; }
+.plan-item.manual-item { background: #1e1a12; border-top-color: #352d1d; }
+.plan-item.manual-item .icon-button { color: #c29f61; }
 .plan-icon { width: 32px; height: 32px; flex: 0 0 32px; border-radius: 7px; background: #252d21; color: var(--lime); display: grid; place-items: center; overflow: hidden; font-size: 10px; font-weight: 800; }
 .plan-icon img { width: 100%; height: 100%; object-fit: cover; }
 .plan-copy { display: grid; gap: 3px; min-width: 0; flex: 1; }
@@ -357,6 +359,7 @@ select option { background: #1a1f18; color: #e7ebe1; }
 .reason { font-size: 7px; color: #849478; padding: 4px 6px; background: #20271d; border-radius: 4px; }
 .reason.required { color: #a69ac9; background: #24202e; }
 .reason.optional { color: #b29b65; background: #292419; }
+.reason.manual { color: #e2b866; background: #322718; }
 .progress-state { width: 22px; display: grid; place-items: center; color: #87947d; }
 .progress-state.installed, .progress-state.skipped { color: var(--lime); }
 .progress-state.failed { color: var(--red); }
@@ -365,6 +368,9 @@ select option { background: #1a1f18; color: #e7ebe1; }
 .optional-list > label { min-height: 48px; padding: 8px 11px; display: flex; align-items: center; gap: 10px; border-top: 1px solid #302d20; cursor: pointer; }
 .optional-list > label:hover { background: #1e1c13; }
 .optional-list input { accent-color: var(--lime); }
+.optional-select-all { display: inline-flex; align-items: center; gap: 6px; color: #aab69c; cursor: pointer; letter-spacing: 0; text-transform: none; font-weight: 700; }
+.optional-select-all input { margin: 0; }
+.optional-select-all:has(input:disabled) { cursor: not-allowed; opacity: .6; }
 .optional-list label > span:nth-child(2) { display: flex; flex: 1; flex-direction: column; gap: 3px; }
 .optional-list strong { font-size: 9px; color: #d8d8ca; }
 .optional-list small { color: #777463; font-size: 7px; }
@@ -572,6 +578,7 @@ body { font-size: 15px; }
 .plan-copy strong { font-size: 13px; }
 .plan-copy small { font-size: 11px; }
 .reason, .optional-list small, .optional-list em { font-size: 11px; }
+.optional-select-all { font-size: 12px; }
 .optional-list > label { min-height: 56px; }
 .optional-list strong { font-size: 13px; }
 .install-summary { font-size: 12px; }

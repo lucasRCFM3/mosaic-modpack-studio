@@ -13,6 +13,8 @@ Aplicativo desktop local-first, construído com **Rust + Tauri 2 + React**, para
 - resolução recursiva do grafo de dependências no backend Rust;
 - dependências obrigatórias instaladas automaticamente;
 - dependências opcionais exibidas para escolha e desmarcadas por padrão;
+- seleção ou remoção de todas as dependências opcionais com uma única ação;
+- fallback automático entre CurseForge e Modrinth quando uma fonte bloqueia o download;
 - detecção de ciclos, incompatibilidades, versões ausentes e distribuição bloqueada;
 - revisão do plano antes de qualquer escrita em disco;
 - fila de instalação persistente por perfil para selecionar vários mods durante a busca e resolver todo o lote de uma vez;
@@ -33,6 +35,8 @@ Aplicativo desktop local-first, construído com **Rust + Tauri 2 + React**, para
 | Incompatível (`incompatible`) | Bloqueia o plano quando o conflito está presente |
 
 Existe uma preferência para pré-selecionar opcionais, mas ela é **opt-in** e vem desativada em instalações novas.
+
+Quando uma fonte não fornece URL para aplicativos de terceiros, o Mosaic procura uma cópia equivalente na outra fonte e só a aceita após conferir a identidade do projeto, versão do Minecraft e loader. Se nenhuma alternativa segura existir, o item passa a exigir instalação manual, mas não bloqueia os demais downloads do plano.
 
 ## Instalação em lote
 

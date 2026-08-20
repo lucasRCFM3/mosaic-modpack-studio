@@ -14,7 +14,7 @@ import type {
   SearchFilters,
   UpdateProfileInput,
 } from '../../shared/domain';
-import { toggleOptionalProject } from '../lib/dependencies';
+import { setAllOptionalProjects, toggleOptionalProject } from '../lib/dependencies';
 import { addProjectToQueue, loadInstallQueues, projectKey, removeProjectFromQueue, removeProjectsFromQueue } from '../lib/install-queue';
 
 const fallbackVersions = ['1.21.8', '1.21.7', '1.21.5', '1.21.4', '1.21.1', '1.20.6', '1.20.4', '1.20.1', '1.19.2', '1.18.2', '1.16.5'];
@@ -189,9 +189,8 @@ export function useMosaic() {
     }
   };
 
-  const toggleOptionalDependency = async (project: ProjectRef) => {
+  const updateOptionalDependencies = async (next: ProjectRef[]) => {
     if (!currentProfile || !plan || !resolutionSource) return;
-    const next = toggleOptionalProject(plan, project);
     setUpdatingPlan(true);
     try {
       setPlan(resolutionSource.kind === 'project'
@@ -204,21 +203,42 @@ export function useMosaic() {
     finally { setUpdatingPlan(false); }
   };
 
+  const toggleOptionalDependency = async (project: ProjectRef) => {
+    if (!plan) return;
+    await updateOptionalDependencies(toggleOptionalProject(plan, project));
+  };
+
+  const setAllOptionalDependencies = async (selected: boolean) => {
+    if (!plan) return;
+    await updateOptionalDependencies(setAllOptionalProjects(plan, selected));
+  };
+
   const installPlan = async () => {
     if (!currentProfile || !plan) return;
     setInstalling(true);
     setProgress({});
+    const source = resolutionSource;
     try {
       const result = await window.mosaic.mods.install(currentProfile.id, plan.id);
       setProfiles((current) => current.map((profile) => profile.id === result.profile.id ? result.profile : profile));
+      const sourceProjects = !result.failed.length && source?.kind === 'project'
+        ? [source.project]
+        : !result.failed.length && source?.kind === 'batch'
+          ? source.projects
+          : [];
       setInstallQueues((current) => ({
         ...current,
-        [currentProfile.id]: removeProjectsFromQueue(current[currentProfile.id] ?? [], result.profile.mods),
+        [currentProfile.id]: removeProjectsFromQueue(
+          current[currentProfile.id] ?? [],
+          [...result.profile.mods, ...plan.manualDownloads.map(({ project }) => project), ...sourceProjects],
+        ),
       }));
       setPlan(undefined);
       setResolutionSource(undefined);
-      const failed = result.failed.length ? ` ${result.failed.length} falharam.` : '';
-      setNotice({ tone: result.failed.length ? 'error' : 'success', text: `${result.installed} mods instalados, ${result.skipped} já estavam prontos.${failed}` });
+      const manualNames = plan.manualDownloads.map(({ project }) => project.name);
+      const failedText = result.failed.length ? ` ${result.failed.length} não foram instalados.` : '';
+      const manualText = manualNames.length ? ` Instalação manual necessária: ${manualNames.join(', ')}.` : '';
+      setNotice({ tone: result.failed.length ? 'error' : manualNames.length ? 'info' : 'success', text: `${result.installed} mods instalados, ${result.skipped} já estavam prontos.${failedText}${manualText}` });
     } catch (error) {
       setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'A instalação falhou.' });
     } finally {
@@ -293,6 +313,6 @@ export function useMosaic() {
     profiles, currentProfile, presets, settings, gameVersions, filters, setFilters, catalog, searching,
     resolvingKey, resolvingPresetId, resolvingBatch, plan, setPlan, installing, updatingPlan, progress, notice, setNotice, installedKeys,
     queuedProjects, queuedKeys,
-    chooseProfile, createProfile, updateProfile, removeProfile, savePreset, removePreset, resolvePreset, resolveProject, addToInstallQueue, removeFromInstallQueue, clearInstallQueue, resolveInstallQueue, toggleOptionalDependency, installPlan, removeMod, saveSettings, exportProfile, exportModList,
+    chooseProfile, createProfile, updateProfile, removeProfile, savePreset, removePreset, resolvePreset, resolveProject, addToInstallQueue, removeFromInstallQueue, clearInstallQueue, resolveInstallQueue, toggleOptionalDependency, setAllOptionalDependencies, installPlan, removeMod, saveSettings, exportProfile, exportModList,
   };
 }

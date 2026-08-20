@@ -251,6 +251,7 @@ pub enum ResolutionIssueCode {
     IncompatibleMod,
     DependencyCycle,
     DistributionRestricted,
+    ProviderFallback,
     ProviderError,
 }
 
@@ -282,6 +283,13 @@ pub struct OptionalDependencyChoice {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ManualDownload {
+    pub project: ProjectSummary,
+    pub reason: InstallReason,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResolutionPlan {
     pub id: String,
     pub target: ProfileTarget,
@@ -289,6 +297,7 @@ pub struct ResolutionPlan {
     pub edges: Vec<ResolutionEdge>,
     pub issues: Vec<ResolutionIssue>,
     pub optional_dependencies: Vec<OptionalDependencyChoice>,
+    pub manual_downloads: Vec<ManualDownload>,
     pub downloadable_bytes: u64,
     pub can_install: bool,
 }

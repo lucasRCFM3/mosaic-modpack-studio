@@ -1,3 +1,4 @@
+use super::provider_fallback::{find_alternate_download, provider_label};
 use crate::{domain::*, error::AppResult, providers::ProviderRegistry};
 use async_recursion::async_recursion;
 use std::{
@@ -20,8 +21,10 @@ struct ResolveContext<'a> {
     edges: Vec<ResolutionEdge>,
     issues: Vec<ResolutionIssue>,
     optional_dependencies: Vec<OptionalDependencyChoice>,
+    manual_downloads: Vec<ManualDownload>,
     visiting: HashSet<String>,
     visited: HashSet<String>,
+    aliases: HashMap<String, String>,
     installed: HashMap<String, &'a InstalledMod>,
 }
 
@@ -73,8 +76,10 @@ impl DependencyResolver {
             edges: Vec::new(),
             issues: Vec::new(),
             optional_dependencies: Vec::new(),
+            manual_downloads: Vec::new(),
             visiting: HashSet::new(),
             visited: HashSet::new(),
+            aliases: HashMap::new(),
             installed: profile
                 .mods
                 .iter()
@@ -100,11 +105,8 @@ impl DependencyResolver {
             .filter(|file| file.url.is_some())
             .map(|file| file.size)
             .sum();
-        let can_install = !nodes.is_empty()
-            && !context
-                .issues
-                .iter()
-                .any(|issue| matches!(issue.severity, IssueSeverity::Error));
+        let can_install =
+            plan_can_install(nodes.len(), context.manual_downloads.len(), &context.issues);
         let plan = ResolutionPlan {
             id: Uuid::new_v4().to_string(),
             target: profile.target.clone(),
@@ -112,6 +114,7 @@ impl DependencyResolver {
             edges: context.edges,
             issues: context.issues,
             optional_dependencies: context.optional_dependencies,
+            manual_downloads: context.manual_downloads,
             downloadable_bytes,
             can_install,
         };
@@ -134,7 +137,8 @@ impl DependencyResolver {
         parent_key: Option<String>,
         version_id: Option<String>,
     ) {
-        let key = project_ref.key();
+        let requested_key = project_ref.key();
+        let key = canonical_key(&context.aliases, &requested_key);
         if context.visiting.contains(&key) {
             context.issues.push(issue(
                 ResolutionIssueCode::DependencyCycle,
@@ -168,7 +172,7 @@ impl DependencyResolver {
             finish(context, &key);
             return;
         }
-        let project = match provider.get_project(&project_ref.project_id).await {
+        let mut project = match provider.get_project(&project_ref.project_id).await {
             Ok(project) => project,
             Err(error) => {
                 context.issues.push(issue(
@@ -181,7 +185,7 @@ impl DependencyResolver {
                 return;
             }
         };
-        let version = match provider
+        let mut version = match provider
             .get_compatible_version(
                 &project_ref.project_id,
                 &context.profile.target,
@@ -216,6 +220,79 @@ impl DependencyResolver {
                 return;
             }
         };
+        let source_already_installed = context
+            .installed
+            .get(&key)
+            .or_else(|| context.installed.get(&requested_key))
+            .is_some_and(|item| item.version_id == version.version_id);
+        if !has_download(&version) && !source_already_installed {
+            if let Some((alternate_project, alternate_version)) =
+                find_alternate_download(&self.providers, &project, &context.profile.target).await
+            {
+                let alternate_ref = ProjectRef {
+                    provider: alternate_project.provider,
+                    project_id: alternate_project.project_id.clone(),
+                };
+                let alternate_key = canonical_key(&context.aliases, &alternate_ref.key());
+                if alternate_key != key && context.nodes.contains_key(&alternate_key) {
+                    context.aliases.insert(key.clone(), alternate_key.clone());
+                    if let Some(node) = context.nodes.get_mut(&alternate_key) {
+                        node.reason = stronger_reason(node.reason, reason);
+                        if matches!(reason, InstallReason::Requested) {
+                            node.parent_key = None;
+                        }
+                    }
+                    context.issues.push(issue(
+                        ResolutionIssueCode::ProviderFallback,
+                        IssueSeverity::Warning,
+                        format!(
+                            "{} não pôde ser baixado pela {}; a cópia equivalente da {} já está no plano.",
+                            project.name,
+                            provider_label(project.provider),
+                            provider_label(alternate_project.provider)
+                        ),
+                        Some(alternate_ref),
+                    ));
+                    finish(context, &key);
+                    return;
+                }
+                context.aliases.insert(alternate_ref.key(), key.clone());
+                context.issues.push(issue(
+                    ResolutionIssueCode::ProviderFallback,
+                    IssueSeverity::Warning,
+                    format!(
+                        "{} bloqueou o download pela {}; será instalada a cópia equivalente da {}.",
+                        project.name,
+                        provider_label(project.provider),
+                        provider_label(alternate_project.provider)
+                    ),
+                    Some(alternate_ref),
+                ));
+                project = alternate_project;
+                version = alternate_version;
+            } else {
+                context.issues.push(issue(
+                    ResolutionIssueCode::DistributionRestricted,
+                    IssueSeverity::Warning,
+                    format!(
+                        "{} não permite download pela {} e nenhuma cópia equivalente instalável foi encontrada na outra fonte. O restante do plano pode ser instalado; baixe este mod manualmente.",
+                        project.name,
+                        provider_label(project.provider)
+                    ),
+                    Some(project_ref.clone()),
+                ));
+                if !context.manual_downloads.iter().any(|item| {
+                    item.project.provider == project.provider
+                        && item.project.project_id == project.project_id
+                }) {
+                    context
+                        .manual_downloads
+                        .push(ManualDownload { project, reason });
+                }
+                finish(context, &key);
+                return;
+            }
+        }
         if !context.nodes.contains_key(&key) {
             context.order.push(key.clone());
         }
@@ -227,15 +304,21 @@ impl DependencyResolver {
                 already_installed: context
                     .installed
                     .get(&key)
+                    .or_else(|| {
+                        context.installed.get(
+                            &ProjectRef {
+                                provider: project.provider,
+                                project_id: project.project_id.clone(),
+                            }
+                            .key(),
+                        )
+                    })
                     .is_some_and(|item| item.version_id == version.version_id),
                 version: version.clone(),
                 reason,
                 parent_key,
             },
         );
-        if primary_file(&version).is_none_or(|file| file.url.is_none()) {
-            context.issues.push(issue(ResolutionIssueCode::DistributionRestricted, IssueSeverity::Error, format!("{} não permite download por aplicativos de terceiros. Abra a página oficial para baixar manualmente.", project.name), Some(project_ref.clone())));
-        }
         for dependency in version.dependencies {
             if dependency.dependency_type == DependencyType::Embedded {
                 continue;
@@ -278,15 +361,16 @@ impl DependencyResolver {
                 project_id: dependency_project_id,
             };
             let child_key = child.key();
-            context.edges.push(ResolutionEdge {
-                from: key.clone(),
-                to: child_key.clone(),
-                dependency_type: dependency.dependency_type,
-            });
             match dependency.dependency_type {
                 DependencyType::Incompatible => {
-                    if context.installed.contains_key(&child_key)
-                        || context.nodes.contains_key(&child_key)
+                    let canonical_child = canonical_key(&context.aliases, &child_key);
+                    context.edges.push(ResolutionEdge {
+                        from: key.clone(),
+                        to: canonical_child.clone(),
+                        dependency_type: dependency.dependency_type,
+                    });
+                    if context.installed.contains_key(&canonical_child)
+                        || context.nodes.contains_key(&canonical_child)
                     {
                         context.issues.push(issue(
                             ResolutionIssueCode::IncompatibleMod,
@@ -304,7 +388,12 @@ impl DependencyResolver {
                         Some(key.clone()),
                         dependency.version_id,
                     )
-                    .await
+                    .await;
+                    context.edges.push(ResolutionEdge {
+                        from: key.clone(),
+                        to: canonical_key(&context.aliases, &child_key),
+                        dependency_type: dependency.dependency_type,
+                    });
                 }
                 DependencyType::Optional => {
                     if !context
@@ -338,6 +427,11 @@ impl DependencyResolver {
                         )
                         .await;
                     }
+                    context.edges.push(ResolutionEdge {
+                        from: key.clone(),
+                        to: canonical_key(&context.aliases, &child_key),
+                        dependency_type: dependency.dependency_type,
+                    });
                 }
                 DependencyType::Embedded => {}
             }
@@ -352,6 +446,32 @@ fn primary_file(version: &ProjectVersion) -> Option<&DownloadFile> {
         .iter()
         .find(|file| file.primary)
         .or_else(|| version.files.first())
+}
+fn has_download(version: &ProjectVersion) -> bool {
+    primary_file(version).is_some_and(|file| file.url.is_some())
+}
+
+fn canonical_key(aliases: &HashMap<String, String>, key: &str) -> String {
+    let mut current = key;
+    let mut traversed = HashSet::new();
+    while traversed.insert(current) {
+        let Some(next) = aliases.get(current) else {
+            break;
+        };
+        current = next;
+    }
+    current.to_string()
+}
+
+fn plan_can_install(
+    node_count: usize,
+    manual_download_count: usize,
+    issues: &[ResolutionIssue],
+) -> bool {
+    node_count + manual_download_count > 0
+        && !issues
+            .iter()
+            .any(|issue| matches!(issue.severity, IssueSeverity::Error))
 }
 fn issue(
     code: ResolutionIssueCode,
@@ -400,6 +520,34 @@ mod tests {
         let selected = HashSet::<String>::new();
         assert!(!selected.contains("modrinth:optional"));
         assert_eq!(DependencyType::Required, DependencyType::Required);
+    }
+
+    #[test]
+    fn provider_aliases_resolve_to_one_canonical_node() {
+        let aliases =
+            HashMap::from([("modrinth:entityculling".into(), "curseforge:448233".into())]);
+        assert_eq!(
+            canonical_key(&aliases, "modrinth:entityculling"),
+            "curseforge:448233"
+        );
+    }
+
+    #[test]
+    fn restricted_distribution_warns_without_blocking_other_downloads() {
+        let warning = issue(
+            ResolutionIssueCode::DistributionRestricted,
+            IssueSeverity::Warning,
+            "Instalação manual necessária.".into(),
+            None,
+        );
+        assert!(plan_can_install(2, 1, &[warning]));
+        let error = issue(
+            ResolutionIssueCode::IncompatibleMod,
+            IssueSeverity::Error,
+            "Conflito real.".into(),
+            None,
+        );
+        assert!(!plan_can_install(2, 0, &[error]));
     }
 
     #[tokio::test]
