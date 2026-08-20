@@ -1,18 +1,31 @@
 use crate::{domain::*, providers::ProviderRegistry};
-use std::collections::HashSet;
-
 pub async fn find_alternate_download(
     providers: &ProviderRegistry,
     source: &ProjectSummary,
     target: &ProfileTarget,
 ) -> Option<(ProjectSummary, ProjectVersion)> {
-    let provider = providers.alternate(source.provider);
+    find_equivalent_project(
+        providers,
+        source,
+        target,
+        ProviderRegistry::alternate_id(source.provider),
+        true,
+    )
+    .await
+}
+
+pub async fn find_equivalent_project(
+    providers: &ProviderRegistry,
+    source: &ProjectSummary,
+    target: &ProfileTarget,
+    target_provider: ProviderId,
+    require_download: bool,
+) -> Option<(ProjectSummary, ProjectVersion)> {
+    let provider = providers.get(target_provider);
     if !provider.is_enabled() {
         return None;
     }
-    let mut candidates = Vec::new();
-    let mut seen = HashSet::new();
-    for query in [&source.name, &source.slug] {
+    for query in [&source.slug, &source.name] {
         if query.trim().is_empty() {
             continue;
         }
@@ -26,31 +39,34 @@ pub async fn find_alternate_download(
             sort: SearchSort::Relevance,
             limit: Some(10),
         };
-        if let Ok(result) = provider.search(&filters).await {
-            for candidate in result.projects {
-                if seen.insert(candidate.project_id.clone()) {
-                    candidates.push(candidate);
+        let Ok(result) = provider.search(&filters).await else {
+            continue;
+        };
+        let mut candidates = result.projects;
+        candidates.retain(|candidate| projects_equivalent(source, candidate));
+        candidates.sort_by(|left, right| {
+            identity_score(source, right)
+                .cmp(&identity_score(source, left))
+                .then_with(|| right.downloads.cmp(&left.downloads))
+        });
+        for candidate in candidates {
+            if let Ok(Some(version)) = provider
+                .get_compatible_version(&candidate.project_id, target, None)
+                .await
+            {
+                if !require_download
+                    || primary_file(&version).is_some_and(|file| file.url.is_some())
+                {
+                    return Some((candidate, version));
                 }
             }
         }
     }
-    candidates.retain(|candidate| identity_score(source, candidate) > 0);
-    candidates.sort_by(|left, right| {
-        identity_score(source, right)
-            .cmp(&identity_score(source, left))
-            .then_with(|| right.downloads.cmp(&left.downloads))
-    });
-    for candidate in candidates {
-        if let Ok(Some(version)) = provider
-            .get_compatible_version(&candidate.project_id, target, None)
-            .await
-        {
-            if primary_file(&version).is_some_and(|file| file.url.is_some()) {
-                return Some((candidate, version));
-            }
-        }
-    }
     None
+}
+
+pub fn projects_equivalent(source: &ProjectSummary, candidate: &ProjectSummary) -> bool {
+    identity_score(source, candidate) > 0
 }
 
 pub fn provider_label(provider: ProviderId) -> &'static str {

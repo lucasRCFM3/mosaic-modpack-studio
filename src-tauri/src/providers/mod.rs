@@ -55,10 +55,21 @@ impl ProviderRegistry {
         }
     }
 
-    pub fn alternate(&self, id: ProviderId) -> Arc<dyn ModProvider> {
-        self.get(match id {
+    pub fn alternate_id(id: ProviderId) -> ProviderId {
+        match id {
             ProviderId::Modrinth => ProviderId::Curseforge,
             ProviderId::Curseforge => ProviderId::Modrinth,
-        })
+        }
+    }
+
+    #[cfg(test)]
+    pub fn from_test_providers(
+        modrinth: Arc<dyn ModProvider>,
+        curseforge: Arc<dyn ModProvider>,
+    ) -> Self {
+        Self {
+            modrinth,
+            curseforge,
+        }
     }
 }

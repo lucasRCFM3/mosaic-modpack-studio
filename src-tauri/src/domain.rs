@@ -250,6 +250,7 @@ pub enum ResolutionIssueCode {
     MissingDependencyId,
     IncompatibleMod,
     DependencyCycle,
+    DependencyMetadataFallback,
     DistributionRestricted,
     ProviderFallback,
     ProviderError,

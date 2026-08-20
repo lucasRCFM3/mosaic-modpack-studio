@@ -15,6 +15,7 @@ Aplicativo desktop local-first, construído com **Rust + Tauri 2 + React**, para
 - dependências opcionais exibidas para escolha e desmarcadas por padrão;
 - seleção ou remoção de todas as dependências opcionais com uma única ação;
 - fallback automático entre CurseForge e Modrinth quando uma fonte bloqueia o download;
+- reconciliação cruzada de metadados para recuperar dependências obrigatórias omitidas por uma das fontes;
 - detecção de ciclos, incompatibilidades, versões ausentes e distribuição bloqueada;
 - revisão do plano antes de qualquer escrita em disco;
 - fila de instalação persistente por perfil para selecionar vários mods durante a busca e resolver todo o lote de uma vez;
@@ -37,6 +38,8 @@ Aplicativo desktop local-first, construído com **Rust + Tauri 2 + React**, para
 Existe uma preferência para pré-selecionar opcionais, mas ela é **opt-in** e vem desativada em instalações novas.
 
 Quando uma fonte não fornece URL para aplicativos de terceiros, o Mosaic procura uma cópia equivalente na outra fonte e só a aceita após conferir a identidade do projeto, versão do Minecraft e loader. Se nenhuma alternativa segura existir, o item passa a exigir instalação manual, mas não bloqueia os demais downloads do plano.
+
+O mesmo cruzamento é aplicado aos metadados: se a versão equivalente na outra plataforma declarar uma dependência obrigatória ausente na fonte escolhida, o Mosaic a incorpora ao grafo. Primeiro tenta baixar essa dependência pela fonte original do mod; se ela não estiver disponível ali, usa a plataforma que forneceu o metadado. Projetos equivalentes são deduplicados antes da instalação.
 
 ## Instalação em lote
 

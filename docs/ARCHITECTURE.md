@@ -10,7 +10,7 @@ React
   ▼
 Comandos Tauri
   ├── CatalogService ───────► ProviderRegistry ─► Modrinth / CurseForge
-  ├── DependencyResolver ───► grafo + plano imutável em memória
+  ├── DependencyResolver ───► reconciliação entre fontes + grafo + plano imutável
   ├── PresetService ────────► coleções reutilizáveis de projetos
   ├── DownloadManager ──────► HTTPS + hash + mods/
   └── ProfileService ───────► JSON local + lockfile
@@ -30,11 +30,13 @@ Comandos Tauri
 O resolvedor percorre o grafo recursivamente e mantém conjuntos de nós visitados e em visita para deduplicação e detecção de ciclos.
 
 1. Seleciona a versão mais recente compatível com Minecraft, loader e canal do perfil.
-2. Adiciona dependências `required` ao plano e continua a travessia.
-3. Registra dependências `optional` em uma lista de escolhas separada.
-4. Só percorre uma opcional quando o ID dela foi explicitamente selecionado.
-5. Ignora `embedded` e transforma `incompatible` em bloqueio quando há conflito.
-6. Mantém o plano no backend; a interface devolve apenas seu identificador para instalar.
+2. Localiza com critérios conservadores a versão equivalente na outra plataforma e compara as dependências obrigatórias declaradas.
+3. Para cada dependência ausente, prefere uma cópia compatível na fonte original e usa a fonte complementar como fallback.
+4. Adiciona dependências `required` reconciliadas ao plano e continua a travessia, deduplicando identidades equivalentes.
+5. Registra dependências `optional` em uma lista de escolhas separada.
+6. Só percorre uma opcional quando o ID dela foi explicitamente selecionado.
+7. Ignora `embedded` e transforma `incompatible` em bloqueio quando há conflito.
+8. Mantém o plano no backend; a interface devolve apenas seu identificador para instalar.
 
 Essa separação garante que dependências opcionais não sejam instaladas por acidente. A preferência global de pré-seleção é apenas uma conveniência opt-in.
 
@@ -83,8 +85,7 @@ Há ainda um teste de integração ignorado por padrão que consulta a Modrinth 
 - importação e exportação `.mrpack`, manifestos CurseForge e instâncias Prism/MultiMC;
 - atualização em lote com snapshot e rollback;
 - identificação de mods existentes por hash;
-- deduplicação entre catálogos;
 - regras de pins, overrides e presets de servidor;
-- cache HTTP com ETag, fila persistente e retomada de downloads;
+- cache HTTP com ETag e retomada de downloads;
 - auditoria de licenças, changelogs e vulnerabilidades;
 - assinatura de lockfiles e colaboração em modpacks.

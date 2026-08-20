@@ -1,4 +1,5 @@
 pub mod catalog;
+mod dependency_reconciliation;
 pub mod download;
 pub mod presets;
 pub mod profiles;

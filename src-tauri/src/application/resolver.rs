@@ -1,4 +1,7 @@
-use super::provider_fallback::{find_alternate_download, provider_label};
+use super::{
+    dependency_reconciliation::reconcile_required_dependencies,
+    provider_fallback::{find_alternate_download, provider_label},
+};
 use crate::{domain::*, error::AppResult, providers::ProviderRegistry};
 use async_recursion::async_recursion;
 use std::{
@@ -292,6 +295,44 @@ impl DependencyResolver {
                 finish(context, &key);
                 return;
             }
+        }
+        if let Some(reconciled) = reconcile_required_dependencies(
+            &self.providers,
+            &project,
+            &version,
+            &context.profile.target,
+        )
+        .await
+        {
+            let total = reconciled.added_projects.len();
+            let names: Vec<_> = reconciled
+                .added_projects
+                .iter()
+                .take(3)
+                .map(|dependency| dependency.name.as_str())
+                .collect();
+            let remaining = total.saturating_sub(names.len());
+            let dependency_names = if remaining > 0 {
+                format!("{} e mais {remaining}", names.join(", "))
+            } else {
+                names.join(", ")
+            };
+            context.issues.push(issue(
+                ResolutionIssueCode::DependencyMetadataFallback,
+                IssueSeverity::Warning,
+                format!(
+                    "A {} informou dependências obrigatórias ausentes nos metadados da {} para {}: {}. Elas foram adicionadas ao plano.",
+                    provider_label(reconciled.metadata_provider),
+                    provider_label(project.provider),
+                    project.name,
+                    dependency_names
+                ),
+                Some(ProjectRef {
+                    provider: project.provider,
+                    project_id: project.project_id.clone(),
+                }),
+            ));
+            version.dependencies = reconciled.dependencies;
         }
         if !context.nodes.contains_key(&key) {
             context.order.push(key.clone());
