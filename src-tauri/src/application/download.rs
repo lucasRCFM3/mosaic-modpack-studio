@@ -85,6 +85,7 @@ impl DownloadManager {
                 "O perfil mudou depois da resolução. Gere um novo plano de instalação.".into(),
             ));
         }
+        let install_graph = install_graph(&plan);
         let mods_root = PathBuf::from(&profile.instance_path).join("mods");
         tokio::fs::create_dir_all(&mods_root).await?;
         let previous: HashMap<_, _> = profile
@@ -116,13 +117,21 @@ impl DownloadManager {
             );
         }
         let plan_id = plan.id.clone();
+        let graph_for_downloads = install_graph.clone();
         let outcomes: Vec<_> = stream::iter(queue)
             .map(|node| {
                 let app = app.clone();
                 let root = mods_root.clone();
                 let plan_id = plan_id.clone();
+                let required_dependencies = graph_for_downloads
+                    .get(&node.key)
+                    .map(|(_, dependencies)| dependencies.clone())
+                    .unwrap_or_default();
                 async move {
-                    match self.install_node(&app, &plan_id, &node, &root).await {
+                    match self
+                        .install_node(&app, &plan_id, &node, &root, required_dependencies)
+                        .await
+                    {
                         Ok(Some(item)) => NodeOutcome::Installed(item),
                         Ok(None) => NodeOutcome::Skipped,
                         Err(error) => {
@@ -158,13 +167,10 @@ impl DownloadManager {
                 NodeOutcome::Failed(error) => failed.push(error),
             }
         }
-        let updated_profile = if installed.is_empty() {
-            profile.clone()
-        } else {
-            self.profiles
-                .record_installed(profile_id, installed.clone())
-                .await?
-        };
+        let updated_profile = self
+            .profiles
+            .record_installed(profile_id, installed.clone(), install_graph)
+            .await?;
         for item in &installed {
             if let Some(old) = previous.get(&item.as_ref().key()) {
                 if old.filename != item.filename {
@@ -186,6 +192,7 @@ impl DownloadManager {
         plan_id: &str,
         node: &ResolutionNode,
         root: &Path,
+        required_dependencies: Vec<ProjectRef>,
     ) -> AppResult<Option<InstalledMod>> {
         let file = primary_file(&node.version).ok_or_else(|| {
             AppError::Message("O provedor não retornou um arquivo instalável.".into())
@@ -211,7 +218,12 @@ impl DownloadManager {
                             Some("Arquivo já verificado no disco.".into()),
                         ),
                     );
-                    return Ok(Some(installed_mod(node, filename, file.hashes.clone())));
+                    return Ok(Some(installed_mod(
+                        node,
+                        filename,
+                        file.hashes.clone(),
+                        required_dependencies,
+                    )));
                 }
             }
         }
@@ -304,11 +316,21 @@ impl DownloadManager {
                 None,
             ),
         );
-        Ok(Some(installed_mod(node, filename, file.hashes.clone())))
+        Ok(Some(installed_mod(
+            node,
+            filename,
+            file.hashes.clone(),
+            required_dependencies,
+        )))
     }
 }
 
-fn installed_mod(node: &ResolutionNode, filename: String, hashes: Vec<FileHash>) -> InstalledMod {
+fn installed_mod(
+    node: &ResolutionNode,
+    filename: String,
+    hashes: Vec<FileHash>,
+    required_dependencies: Vec<ProjectRef>,
+) -> InstalledMod {
     InstalledMod {
         provider: node.project.provider,
         project_id: node.project.project_id.clone(),
@@ -320,7 +342,43 @@ fn installed_mod(node: &ResolutionNode, filename: String, hashes: Vec<FileHash>)
         reason: node.reason,
         hashes,
         enabled: true,
+        required_dependencies: Some(required_dependencies),
     }
+}
+
+fn install_graph(plan: &ResolutionPlan) -> HashMap<String, (InstallReason, Vec<ProjectRef>)> {
+    let projects: HashMap<_, _> = plan
+        .nodes
+        .iter()
+        .map(|node| {
+            (
+                node.key.clone(),
+                ProjectRef {
+                    provider: node.project.provider,
+                    project_id: node.project.project_id.clone(),
+                },
+            )
+        })
+        .collect();
+    let mut graph: HashMap<String, (InstallReason, Vec<ProjectRef>)> = plan
+        .nodes
+        .iter()
+        .map(|node| (node.key.clone(), (node.reason, Vec::new())))
+        .collect();
+    for edge in &plan.edges {
+        if !matches!(edge.dependency_type, DependencyType::Required) {
+            continue;
+        }
+        let Some(project) = projects.get(&edge.to) else {
+            continue;
+        };
+        if let Some((_, dependencies)) = graph.get_mut(&edge.from) {
+            if !dependencies.contains(project) {
+                dependencies.push(project.clone());
+            }
+        }
+    }
+    graph
 }
 fn primary_file(version: &ProjectVersion) -> Option<&DownloadFile> {
     version

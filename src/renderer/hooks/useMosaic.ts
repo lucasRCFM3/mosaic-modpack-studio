@@ -164,9 +164,18 @@ export function useMosaic() {
 
   const removeMod = async (ref: ProjectRef) => {
     if (!currentProfile) return;
-    const updated = await window.mosaic.mods.remove(currentProfile.id, ref);
-    setProfiles((current) => current.map((profile) => profile.id === updated.id ? updated : profile));
-    setNotice({ tone: 'info', text: 'Mod removido da instância.' });
+    try {
+      const result = await window.mosaic.mods.remove(currentProfile.id, ref);
+      setProfiles((current) => current.map((profile) => profile.id === result.profile.id ? result.profile : profile));
+      const orphaned = Math.max(0, result.removed.length - 1);
+      const kept = result.retainedShared.length;
+      const removedText = orphaned ? ` e ${orphaned} dependência${orphaned === 1 ? '' : 's'} órfã${orphaned === 1 ? '' : 's'}` : '';
+      const keptText = kept ? ` ${kept} dependência${kept === 1 ? '' : 's'} ainda necessária${kept === 1 ? ' foi preservada' : 's foram preservadas'}.` : '';
+      const unmanagedText = result.unmanagedModFiles ? ` A limpeza automática foi limitada porque há ${result.unmanagedModFiles} mod${result.unmanagedModFiles === 1 ? '' : 's'} não gerenciado${result.unmanagedModFiles === 1 ? '' : 's'} na pasta.` : '';
+      setNotice({ tone: 'info', text: `Mod${removedText} removido${orphaned > 0 ? 's' : ''}.${keptText}${unmanagedText}` });
+    } catch (error) {
+      setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível remover o mod com segurança.' });
+    }
   };
 
   const saveSettings = async (input: SaveSettingsInput) => {

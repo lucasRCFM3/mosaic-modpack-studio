@@ -7,6 +7,7 @@ import type {
   ModPreset,
   ModpackProfile,
   ProjectRef,
+  RemoveModResult,
   ResolutionPlan,
   SaveSettingsInput,
   SearchFilters,
@@ -37,7 +38,7 @@ export interface MosaicApi {
   mods: {
     resolve(profileId: string, project: ProjectRef, selectedOptional?: ProjectRef[]): Promise<ResolutionPlan>;
     install(profileId: string, planId: string): Promise<InstallResult>;
-    remove(profileId: string, project: ProjectRef): Promise<ModpackProfile>;
+    remove(profileId: string, project: ProjectRef): Promise<RemoveModResult>;
     openProject(project: ProjectRef): Promise<void>;
     onProgress(listener: (progress: InstallProgress) => void): () => void;
   };

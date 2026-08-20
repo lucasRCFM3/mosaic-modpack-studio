@@ -145,6 +145,12 @@ impl DependencyResolver {
             return;
         }
         if context.visited.contains(&key) {
+            if let Some(node) = context.nodes.get_mut(&key) {
+                node.reason = stronger_reason(node.reason, reason);
+                if matches!(reason, InstallReason::Requested) {
+                    node.parent_key = None;
+                }
+            }
             return;
         }
         context.visiting.insert(key.clone());
@@ -365,9 +371,29 @@ fn finish(context: &mut ResolveContext<'_>, key: &str) {
     context.visited.insert(key.into());
 }
 
+fn stronger_reason(current: InstallReason, incoming: InstallReason) -> InstallReason {
+    match (current, incoming) {
+        (_, InstallReason::Requested) => InstallReason::Requested,
+        (InstallReason::Required, InstallReason::Optional) => InstallReason::Optional,
+        _ => current,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_selection_is_never_downgraded_to_a_dependency() {
+        assert!(matches!(
+            stronger_reason(InstallReason::Required, InstallReason::Requested),
+            InstallReason::Requested
+        ));
+        assert!(matches!(
+            stronger_reason(InstallReason::Requested, InstallReason::Required),
+            InstallReason::Requested
+        ));
+    }
     use crate::infrastructure::secrets::SecretStore;
     #[test]
     fn required_dependencies_are_the_only_automatic_default() {

@@ -169,14 +169,10 @@ pub async fn mods_remove(
     state: State<'_, AppState>,
     profile_id: String,
     project: ProjectRef,
-) -> Result<ModpackProfile, String> {
+) -> Result<RemoveModResult, String> {
     validate_uuid(&profile_id)?;
     validate_project(&project)?;
-    state
-        .profiles
-        .remove_mod(&profile_id, &project)
-        .await
-        .message()
+    state.removal.remove(&profile_id, &project).await.message()
 }
 
 #[tauri::command]

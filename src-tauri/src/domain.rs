@@ -306,6 +306,8 @@ pub struct InstalledMod {
     pub reason: InstallReason,
     pub hashes: Vec<FileHash>,
     pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required_dependencies: Option<Vec<ProjectRef>>,
 }
 
 impl InstalledMod {
@@ -377,6 +379,15 @@ pub struct InstallResult {
     pub installed: usize,
     pub skipped: usize,
     pub failed: Vec<InstallFailure>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoveModResult {
+    pub profile: ModpackProfile,
+    pub removed: Vec<InstalledMod>,
+    pub retained_shared: Vec<InstalledMod>,
+    pub unmanaged_mod_files: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

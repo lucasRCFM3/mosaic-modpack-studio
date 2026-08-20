@@ -6,6 +6,7 @@ use crate::{
 use chrono::Utc;
 use serde::Serialize;
 use std::{
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -118,7 +119,8 @@ impl ProfileService {
     pub async fn record_installed(
         &self,
         id: &str,
-        mods: Vec<InstalledMod>,
+        mut mods: Vec<InstalledMod>,
+        graph: HashMap<String, (InstallReason, Vec<ProjectRef>)>,
     ) -> AppResult<ModpackProfile> {
         self.store
             .update(|database| {
@@ -129,44 +131,119 @@ impl ProfileService {
                     .ok_or_else(|| {
                         AppError::Message("Perfil não encontrado durante a instalação.".into())
                     })?;
-                let incoming: std::collections::HashSet<_> =
-                    mods.iter().map(|item| item.as_ref().key()).collect();
+                for item in &mut mods {
+                    if profile.mods.iter().any(|existing| {
+                        existing.as_ref() == item.as_ref()
+                            && matches!(existing.reason, InstallReason::Requested)
+                    }) {
+                        item.reason = InstallReason::Requested;
+                    }
+                }
+                let incoming: HashSet<_> = mods.iter().map(|item| item.as_ref().key()).collect();
                 profile
                     .mods
                     .retain(|item| !incoming.contains(&item.as_ref().key()));
                 profile.mods.extend(mods);
+                for item in &mut profile.mods {
+                    if let Some((reason, dependencies)) = graph.get(&item.as_ref().key()) {
+                        if !matches!(item.reason, InstallReason::Requested)
+                            || matches!(reason, InstallReason::Requested)
+                        {
+                            item.reason = *reason;
+                        }
+                        item.required_dependencies = Some(dependencies.clone());
+                    }
+                }
                 profile.updated_at = Utc::now().to_rfc3339();
                 Ok(profile.clone())
             })
             .await?
     }
 
-    pub async fn remove_mod(&self, id: &str, project: &ProjectRef) -> AppResult<ModpackProfile> {
+    pub async fn remove_mods(
+        &self,
+        id: &str,
+        project_keys: &HashSet<String>,
+        expected_updated_at: &str,
+        graph: &HashMap<String, Vec<ProjectRef>>,
+    ) -> AppResult<ModpackProfile> {
         let profile = self.get(id).await?;
-        if let Some(item) = profile.mods.iter().find(|item| item.as_ref() == *project) {
-            let root = PathBuf::from(&profile.instance_path).join("mods");
-            let filename = Path::new(&item.filename)
-                .file_name()
-                .ok_or_else(|| AppError::Message("Nome de arquivo inválido.".into()))?;
-            let file = root.join(filename);
-            match tokio::fs::remove_file(file).await {
-                Ok(()) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error.into()),
-            }
+        if profile.updated_at != expected_updated_at {
+            return Err(AppError::Message(
+                "O modpack mudou durante a verificação. Tente remover novamente.".into(),
+            ));
         }
-        self.store
+        let root = PathBuf::from(&profile.instance_path).join("mods");
+        let trash = root.join(".mosaic-trash").join(Uuid::new_v4().to_string());
+        let candidates: AppResult<Vec<_>> = profile
+            .mods
+            .iter()
+            .filter(|item| project_keys.contains(&item.as_ref().key()))
+            .map(|item| {
+                let registered = Path::new(&item.filename);
+                let filename = registered
+                    .file_name()
+                    .ok_or_else(|| AppError::Message("Nome de arquivo inválido.".into()))?;
+                if registered != Path::new(filename) {
+                    return Err(AppError::Message(
+                        "Um arquivo registrado possui um caminho inseguro.".into(),
+                    ));
+                }
+                Ok((root.join(filename), trash.join(filename)))
+            })
+            .collect();
+        let mut moved = Vec::new();
+        for (source, staged) in candidates? {
+            if !tokio::fs::try_exists(&source).await? {
+                continue;
+            }
+            if moved.is_empty() {
+                tokio::fs::create_dir_all(&trash).await?;
+            }
+            if let Err(error) = tokio::fs::rename(&source, &staged).await {
+                restore_files(&moved).await;
+                return Err(error.into());
+            }
+            moved.push((source, staged));
+        }
+        let result = self
+            .store
             .update(|database| {
                 let stored = database
                     .profiles
                     .iter_mut()
                     .find(|profile| profile.id == id)
                     .ok_or_else(|| AppError::Message("Perfil não encontrado.".into()))?;
-                stored.mods.retain(|item| item.as_ref() != *project);
+                if stored.updated_at != expected_updated_at {
+                    return Err(AppError::Message(
+                        "O modpack mudou durante a verificação. Tente remover novamente.".into(),
+                    ));
+                }
+                stored
+                    .mods
+                    .retain(|item| !project_keys.contains(&item.as_ref().key()));
+                for item in &mut stored.mods {
+                    if let Some(dependencies) = graph.get(&item.as_ref().key()) {
+                        item.required_dependencies = Some(dependencies.clone());
+                    }
+                }
                 stored.updated_at = Utc::now().to_rfc3339();
                 Ok(stored.clone())
             })
-            .await?
+            .await
+            .and_then(|result| result);
+        match result {
+            Ok(updated) => {
+                if !moved.is_empty() {
+                    let _ = tokio::fs::remove_dir_all(&trash).await;
+                }
+                Ok(updated)
+            }
+            Err(error) => {
+                restore_files(&moved).await;
+                Err(error)
+            }
+        }
     }
 
     pub async fn export_lockfile(&self, id: &str, destination: &Path) -> AppResult<()> {
@@ -180,7 +257,7 @@ impl ProfileService {
         }
         let lockfile = Lockfile {
             format_version: 1,
-            generated_by: "Mosaic Modpack Studio 0.3.7",
+            generated_by: "Mosaic Modpack Studio 0.4.0",
             generated_at: Utc::now().to_rfc3339(),
             profile: self.get(id).await?,
         };
@@ -189,6 +266,12 @@ impl ProfileService {
         }
         tokio::fs::write(destination, serde_json::to_vec_pretty(&lockfile)?).await?;
         Ok(())
+    }
+}
+
+async fn restore_files(files: &[(PathBuf, PathBuf)]) {
+    for (original, staged) in files.iter().rev() {
+        let _ = tokio::fs::rename(staged, original).await;
     }
 }
 

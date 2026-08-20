@@ -138,6 +138,7 @@ export interface InstalledMod extends ProjectRef {
   reason: ResolutionNode['reason'];
   hashes: FileHash[];
   enabled: boolean;
+  requiredDependencies?: ProjectRef[];
 }
 
 export interface ModpackProfile {
@@ -166,6 +167,13 @@ export interface InstallProgress {
   receivedBytes: number;
   totalBytes: number;
   message?: string;
+}
+
+export interface RemoveModResult {
+  profile: ModpackProfile;
+  removed: InstalledMod[];
+  retainedShared: InstalledMod[];
+  unmanagedModFiles: number;
 }
 
 export interface InstallResult {
