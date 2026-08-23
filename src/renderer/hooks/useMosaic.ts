@@ -3,6 +3,7 @@ import type {
   AppSettings,
   CatalogSearchResult,
   CreateProfileInput,
+  DuplicateProfileInput,
   InstallProgress,
   ModPreset,
   ModpackProfile,
@@ -109,6 +110,16 @@ export function useMosaic() {
     await refreshProfiles();
     setCurrentProfileId(created.id);
     setNotice({ tone: 'success', text: `${created.name} está pronto para receber mods.` });
+  };
+
+  const duplicateProfile = async (id: string, input: DuplicateProfileInput) => {
+    const result = await window.mosaic.profiles.duplicate(id, input);
+    await refreshProfiles();
+    setCurrentProfileId(result.profile.id);
+    const size = result.copiedBytes >= 1024 * 1024
+      ? `${(result.copiedBytes / (1024 * 1024)).toFixed(1)} MB`
+      : `${Math.ceil(result.copiedBytes / 1024)} KB`;
+    setNotice({ tone: 'success', text: `${result.profile.name} foi duplicado com ${result.copiedFiles} arquivo${result.copiedFiles === 1 ? '' : 's'} (${size}).` });
   };
 
   const removeProfile = async (id: string) => {
@@ -314,6 +325,6 @@ export function useMosaic() {
     profiles, currentProfile, presets, settings, gameVersions, filters, setFilters, catalog, searching,
     resolvingKey, resolvingPresetId, resolvingBatch, plan, setPlan, installing, updatingPlan, progress, notice, setNotice, installedKeys,
     queuedProjects, queuedKeys,
-    chooseProfile, createProfile, updateProfile, removeProfile, savePreset, removePreset, resolvePreset, resolveProject, addToInstallQueue, removeFromInstallQueue, clearInstallQueue, resolveInstallQueue, toggleOptionalDependency, setAllOptionalDependencies, installPlan, removeMod, saveSettings, exportProfile, exportModList,
+    chooseProfile, createProfile, duplicateProfile, updateProfile, removeProfile, savePreset, removePreset, resolvePreset, resolveProject, addToInstallQueue, removeFromInstallQueue, clearInstallQueue, resolveInstallQueue, toggleOptionalDependency, setAllOptionalDependencies, installPlan, removeMod, saveSettings, exportProfile, exportModList,
   };
 }

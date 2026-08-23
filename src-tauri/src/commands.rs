@@ -28,6 +28,16 @@ pub async fn profiles_create(
 }
 
 #[tauri::command]
+pub async fn profiles_duplicate(
+    state: State<'_, AppState>,
+    profile_id: String,
+    input: DuplicateProfileInput,
+) -> Result<DuplicateProfileResult, String> {
+    validate_uuid(&profile_id)?;
+    state.profiles.duplicate(&profile_id, input).await.message()
+}
+
+#[tauri::command]
 pub async fn profiles_update(
     state: State<'_, AppState>,
     profile_id: String,

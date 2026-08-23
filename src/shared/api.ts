@@ -2,6 +2,8 @@ import type {
   AppSettings,
   CatalogSearchResult,
   CreateProfileInput,
+  DuplicateProfileInput,
+  DuplicateProfileResult,
   InstallProgress,
   InstallResult,
   ModPreset,
@@ -23,6 +25,7 @@ export interface MosaicApi {
   profiles: {
     list(): Promise<ModpackProfile[]>;
     create(input: CreateProfileInput): Promise<ModpackProfile>;
+    duplicate(profileId: string, input: DuplicateProfileInput): Promise<DuplicateProfileResult>;
     update(profileId: string, input: UpdateProfileInput): Promise<ModpackProfile>;
     remove(profileId: string): Promise<void>;
     chooseFolder(): Promise<string | undefined>;

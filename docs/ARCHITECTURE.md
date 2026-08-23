@@ -46,6 +46,12 @@ Antes de remover um mod, o serviço recompõe o grafo combinando as relações r
 
 O renderer deriva um índice reverso dessas relações para explicar o uso de cada dependência sem duplicar estado persistido. A travessia reversa chega aos mods raiz, permitindo apresentar relações transitivas e pesquisar uma biblioteca pelo nome dos mods que a utilizam.
 
+### Duplicação transacional
+
+O `ProfileService` serializa duplicações e valida que origem e destino não sejam iguais, ancestrais ou descendentes. O destino precisa estar ausente ou vazio e não pode pertencer a outro perfil. Os arquivos são copiados primeiro para um diretório `.part` irmão ao destino; links simbólicos e itens especiais são recusados. Depois de conferir que o perfil original não mudou durante a operação, um `rename` no mesmo volume publica a instância e só então o novo perfil é persistido. Falhas removem o estágio e restauram uma pasta vazia escolhida pelo usuário.
+
+O modo completo percorre toda a árvore. O modo limpo copia apenas os nomes de arquivos registrados no lockfile para `mods/`; metadados de projeto, versões, hashes, motivos e arestas de dependência são clonados para que as duas instâncias evoluam independentemente.
+
 ### Resolução de predefinições
 
 Uma predefinição guarda referências estáveis de projetos e nomes para apresentação, nunca URLs ou arquivos de uma versão específica. Ao aplicá-la, todos os projetos entram como raízes do mesmo `ResolveContext`. Isso permite escolher versões adequadas ao perfil atual, deduplicar dependências compartilhadas e produzir um único plano atômico. Qualquer raiz incompatível gera um erro e impede a instalação parcial do lote.

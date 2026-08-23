@@ -16,6 +16,7 @@ export const mosaicApi: MosaicApi = {
   profiles: {
     list: () => call('profiles_list'),
     create: (input) => call('profiles_create', { input }),
+    duplicate: (profileId, input) => call('profiles_duplicate', { profileId, input }),
     update: (profileId, input) => call('profiles_update', { profileId, input }),
     remove: (profileId) => call('profiles_remove', { profileId }),
     chooseFolder: () => call('profiles_choose_folder'),

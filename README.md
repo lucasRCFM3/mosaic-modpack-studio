@@ -22,6 +22,7 @@ Aplicativo desktop local-first, construído com **Rust + Tauri 2 + React**, para
 - pesquisa por nome, autor, origem ou categoria dentro da fila de instalação;
 - downloads concorrentes por HTTPS, arquivo `.part`, verificação de hash e renomeação;
 - perfis independentes com nome e descrição editáveis, registro dos mods e lockfile JSON exportável;
+- duplicação transacional de modpacks, com cópia completa ou uma nova instância somente com os mods registrados;
 - remoção conservadora que preserva qualquer dependência ainda referenciada por outro mod instalado;
 - identifica na lista quais mods utilizam cada dependência, inclusive em cadeias transitivas;
 - predefinições reutilizáveis que verificam versões compatíveis e resolvem todas as dependências em lote;
@@ -49,6 +50,12 @@ O mesmo cruzamento é aplicado aos metadados: se a versão equivalente na outra 
 ## Instalação em lote
 
 Em **Descobrir**, use **À lista** nos projetos desejados e continue pesquisando normalmente. A lista permanece vinculada ao modpack atual e permite remover itens ou limpar tudo. Ao clicar em **Instalar todos**, o Mosaic cria um único plano, elimina projetos e dependências duplicados, verifica a compatibilidade de todo o conjunto e baixa as dependências obrigatórias após a confirmação.
+
+## Duplicar um modpack
+
+Em **Meu modpack → Duplicar**, escolha o nome e, opcionalmente, uma pasta vazia. A **Cópia completa** preserva toda a instância, incluindo mods nas versões atuais, configurações, saves, resource packs e scripts. A **Cópia limpa** leva somente os arquivos de mods registrados pelo Mosaic, mantendo o mesmo Minecraft, loader e grafo de dependências sem copiar saves, configurações, logs ou JARs manuais.
+
+A cópia é montada em uma pasta temporária e o perfil novo só aparece depois da conclusão. Pastas não vazias, destinos sobrepostos à origem e links simbólicos são recusados para impedir sobrescrita, recursão e escape da instância.
 
 ## Predefinições de mods
 

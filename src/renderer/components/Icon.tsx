@@ -1,10 +1,11 @@
 import type { SVGProps } from 'react';
 
-export type IconName = 'compass' | 'box' | 'download' | 'settings' | 'search' | 'plus' | 'chevron' | 'sparkles' | 'hard-drive' | 'layers' | 'shield' | 'external' | 'x' | 'check' | 'alert' | 'trash' | 'export' | 'folder' | 'refresh' | 'server' | 'monitor' | 'package';
+export type IconName = 'compass' | 'box' | 'copy' | 'download' | 'settings' | 'search' | 'plus' | 'chevron' | 'sparkles' | 'hard-drive' | 'layers' | 'shield' | 'external' | 'x' | 'check' | 'alert' | 'trash' | 'export' | 'folder' | 'refresh' | 'server' | 'monitor' | 'package';
 
 const paths: Record<IconName, React.ReactNode> = {
   compass: <><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/></>,
   box: <><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="m4 7 8 4 8-4v10l-8 4-8-4V7Z"/><path d="M12 11v10"/></>,
+  copy: <><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></>,
   download: <><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></>,
   settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></>,
   search: <><circle cx="10.8" cy="10.8" r="7"/><path d="m16 16 5 5"/></>,

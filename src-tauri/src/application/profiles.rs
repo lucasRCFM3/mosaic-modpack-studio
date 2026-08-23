@@ -15,6 +15,7 @@ use uuid::Uuid;
 pub struct ProfileService {
     store: Arc<JsonStore>,
     default_root: PathBuf,
+    file_operations: tokio::sync::Mutex<()>,
 }
 
 impl ProfileService {
@@ -22,6 +23,7 @@ impl ProfileService {
         Self {
             store,
             default_root,
+            file_operations: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -88,6 +90,109 @@ impl ProfileService {
             .update(|database| database.profiles.push(profile.clone()))
             .await?;
         Ok(profile)
+    }
+
+    pub async fn duplicate(
+        &self,
+        source_id: &str,
+        input: DuplicateProfileInput,
+    ) -> AppResult<DuplicateProfileResult> {
+        let _operation = self.file_operations.lock().await;
+        let source_profile = self.get(source_id).await?;
+        let name = input.name.trim();
+        let description = input.description.unwrap_or_default().trim().to_string();
+        validate_profile_metadata(name, &description)?;
+
+        let id = Uuid::new_v4().to_string();
+        let requested_destination = input
+            .instance_path
+            .filter(|value| !value.trim().is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                self.default_root
+                    .join(safe_folder_name(name))
+                    .join(&id[..8])
+            });
+        let source = tokio::fs::canonicalize(&source_profile.instance_path)
+            .await
+            .map_err(|error| {
+                AppError::Message(format!(
+                    "A pasta da instância original não pôde ser acessada: {error}"
+                ))
+            })?;
+        let (destination, destination_existed) =
+            prepare_duplicate_destination(&requested_destination).await?;
+        validate_distinct_instance_paths(&source, &destination)?;
+        validate_destination_is_unused(&self.store, source_id, &destination).await?;
+        validate_registered_mod_files(&source_profile, &source).await?;
+
+        let parent = destination.parent().ok_or_else(|| {
+            AppError::Message("A pasta de destino não possui um diretório pai válido.".into())
+        })?;
+        let staging = parent.join(format!(".mosaic-duplicate-{id}.part"));
+        let copy_result = match input.mode {
+            DuplicateProfileMode::Full => copy_directory_tree(&source, &staging).await,
+            DuplicateProfileMode::ModsOnly => {
+                copy_registered_mods(&source_profile, &source, &staging).await
+            }
+        };
+        let stats = match copy_result {
+            Ok(stats) => stats,
+            Err(error) => {
+                let _ = tokio::fs::remove_dir_all(&staging).await;
+                return Err(error);
+            }
+        };
+
+        let current_source = match self.get(source_id).await {
+            Ok(profile) => profile,
+            Err(error) => {
+                let _ = tokio::fs::remove_dir_all(&staging).await;
+                return Err(error);
+            }
+        };
+        if current_source.updated_at != source_profile.updated_at {
+            let _ = tokio::fs::remove_dir_all(&staging).await;
+            return Err(AppError::Message(
+                "O modpack original mudou durante a cópia. A operação foi cancelada; tente novamente."
+                    .into(),
+            ));
+        }
+
+        if let Err(error) =
+            finalize_duplicate_directory(&staging, &destination, destination_existed).await
+        {
+            let _ = tokio::fs::remove_dir_all(&staging).await;
+            return Err(error);
+        }
+
+        let now = Utc::now().to_rfc3339();
+        let profile = ModpackProfile {
+            id,
+            name: name.into(),
+            description,
+            target: source_profile.target,
+            instance_path: destination.to_string_lossy().into_owned(),
+            created_at: now.clone(),
+            updated_at: now,
+            mods: source_profile.mods,
+        };
+        if let Err(error) = self
+            .store
+            .update(|database| database.profiles.push(profile.clone()))
+            .await
+        {
+            let _ = tokio::fs::remove_dir_all(&destination).await;
+            if destination_existed {
+                let _ = tokio::fs::create_dir_all(&destination).await;
+            }
+            return Err(error);
+        }
+        Ok(DuplicateProfileResult {
+            profile,
+            copied_files: stats.files,
+            copied_bytes: stats.bytes,
+        })
     }
 
     pub async fn update(&self, id: &str, input: UpdateProfileInput) -> AppResult<ModpackProfile> {
@@ -257,7 +362,7 @@ impl ProfileService {
         }
         let lockfile = Lockfile {
             format_version: 1,
-            generated_by: "Mosaic Modpack Studio 0.9.0",
+            generated_by: "Mosaic Modpack Studio 0.10.0",
             generated_at: Utc::now().to_rfc3339(),
             profile: self.get(id).await?,
         };
@@ -282,6 +387,201 @@ async fn restore_files(files: &[(PathBuf, PathBuf)]) {
     for (original, staged) in files.iter().rev() {
         let _ = tokio::fs::rename(staged, original).await;
     }
+}
+
+#[derive(Default)]
+struct CopyStats {
+    files: u64,
+    bytes: u64,
+}
+
+async fn prepare_duplicate_destination(path: &Path) -> AppResult<(PathBuf, bool)> {
+    let absolute = if path.is_absolute() {
+        path.to_owned()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    if tokio::fs::try_exists(&absolute).await? {
+        if !tokio::fs::metadata(&absolute).await?.is_dir() {
+            return Err(AppError::Message(
+                "O destino escolhido existe, mas não é uma pasta.".into(),
+            ));
+        }
+        if !directory_is_empty(&absolute).await? {
+            return Err(AppError::Message(
+                "Escolha uma pasta vazia para não sobrescrever arquivos existentes.".into(),
+            ));
+        }
+        return Ok((tokio::fs::canonicalize(absolute).await?, true));
+    }
+
+    let parent = absolute.parent().ok_or_else(|| {
+        AppError::Message("A pasta de destino não possui um diretório pai válido.".into())
+    })?;
+    tokio::fs::create_dir_all(parent).await?;
+    let canonical_parent = tokio::fs::canonicalize(parent).await?;
+    let name = absolute
+        .file_name()
+        .ok_or_else(|| AppError::Message("Escolha uma pasta de destino válida.".into()))?;
+    Ok((canonical_parent.join(name), false))
+}
+
+async fn directory_is_empty(path: &Path) -> AppResult<bool> {
+    Ok(tokio::fs::read_dir(path)
+        .await?
+        .next_entry()
+        .await?
+        .is_none())
+}
+
+fn validate_distinct_instance_paths(source: &Path, destination: &Path) -> AppResult<()> {
+    if source == destination || source.starts_with(destination) || destination.starts_with(source) {
+        return Err(AppError::Message(
+            "A cópia precisa ficar fora da pasta original e não pode conter a instância original."
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
+async fn validate_destination_is_unused(
+    store: &JsonStore,
+    source_id: &str,
+    destination: &Path,
+) -> AppResult<()> {
+    for profile in store
+        .snapshot()
+        .await
+        .profiles
+        .into_iter()
+        .filter(|profile| profile.id != source_id)
+    {
+        let path = PathBuf::from(profile.instance_path);
+        let comparable = if tokio::fs::try_exists(&path).await? {
+            tokio::fs::canonicalize(path).await?
+        } else {
+            path
+        };
+        if comparable == destination {
+            return Err(AppError::Message(
+                "Essa pasta já pertence a outro modpack do Mosaic.".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+async fn validate_registered_mod_files(profile: &ModpackProfile, source: &Path) -> AppResult<()> {
+    let mods = source.join("mods");
+    for item in &profile.mods {
+        let filename = safe_registered_filename(&item.filename)?;
+        let path = mods.join(filename);
+        let metadata = tokio::fs::symlink_metadata(&path).await.map_err(|error| {
+            AppError::Message(format!(
+                "O arquivo registrado de {} não pôde ser copiado: {error}",
+                item.name
+            ))
+        })?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            return Err(AppError::Message(format!(
+                "O arquivo registrado de {} não é um arquivo regular seguro.",
+                item.name
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn safe_registered_filename(value: &str) -> AppResult<&std::ffi::OsStr> {
+    let path = Path::new(value);
+    let filename = path
+        .file_name()
+        .ok_or_else(|| AppError::Message("Um mod possui nome de arquivo inválido.".into()))?;
+    if path != Path::new(filename) {
+        return Err(AppError::Message(
+            "Um mod registrado possui um caminho inseguro.".into(),
+        ));
+    }
+    Ok(filename)
+}
+
+async fn copy_registered_mods(
+    profile: &ModpackProfile,
+    source: &Path,
+    destination: &Path,
+) -> AppResult<CopyStats> {
+    let source_mods = source.join("mods");
+    let destination_mods = destination.join("mods");
+    tokio::fs::create_dir_all(&destination_mods).await?;
+    let mut stats = CopyStats::default();
+    for item in &profile.mods {
+        let filename = safe_registered_filename(&item.filename)?;
+        let bytes =
+            tokio::fs::copy(source_mods.join(filename), destination_mods.join(filename)).await?;
+        stats.files += 1;
+        stats.bytes += bytes;
+    }
+    Ok(stats)
+}
+
+async fn copy_directory_tree(source: &Path, destination: &Path) -> AppResult<CopyStats> {
+    tokio::fs::create_dir_all(destination).await?;
+    let mut pending = vec![(source.to_owned(), destination.to_owned())];
+    let mut stats = CopyStats::default();
+    while let Some((current_source, current_destination)) = pending.pop() {
+        let mut entries = tokio::fs::read_dir(&current_source).await?;
+        while let Some(entry) = entries.next_entry().await? {
+            let file_type = entry.file_type().await?;
+            if file_type.is_symlink() {
+                return Err(AppError::Message(format!(
+                    "A instância contém um link simbólico que não pode ser copiado com segurança: {}",
+                    entry.path().display()
+                )));
+            }
+            let destination_path = current_destination.join(entry.file_name());
+            if file_type.is_dir() {
+                tokio::fs::create_dir(&destination_path).await?;
+                pending.push((entry.path(), destination_path));
+            } else if file_type.is_file() {
+                let bytes = tokio::fs::copy(entry.path(), destination_path).await?;
+                stats.files += 1;
+                stats.bytes += bytes;
+            } else {
+                return Err(AppError::Message(format!(
+                    "A instância contém um item especial que não pode ser copiado: {}",
+                    entry.path().display()
+                )));
+            }
+        }
+    }
+    Ok(stats)
+}
+
+async fn finalize_duplicate_directory(
+    staging: &Path,
+    destination: &Path,
+    destination_existed: bool,
+) -> AppResult<()> {
+    if destination_existed {
+        if !directory_is_empty(destination).await? {
+            return Err(AppError::Message(
+                "A pasta de destino recebeu arquivos durante a cópia. A operação foi cancelada."
+                    .into(),
+            ));
+        }
+        tokio::fs::remove_dir(destination).await?;
+    } else if tokio::fs::try_exists(destination).await? {
+        return Err(AppError::Message(
+            "A pasta de destino passou a existir durante a cópia. Nada foi sobrescrito.".into(),
+        ));
+    }
+    if let Err(error) = tokio::fs::rename(staging, destination).await {
+        if destination_existed {
+            let _ = tokio::fs::create_dir_all(destination).await;
+        }
+        return Err(error.into());
+    }
+    Ok(())
 }
 
 fn validate_target(target: &ProfileTarget) -> AppResult<()> {
@@ -347,8 +647,18 @@ fn render_mod_list(mods: &[InstalledMod]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{render_mod_list, validate_profile_metadata};
-    use crate::domain::{InstallReason, InstalledMod, ProviderId};
+    use super::{
+        ProfileService, prepare_duplicate_destination, render_mod_list,
+        validate_distinct_instance_paths, validate_profile_metadata,
+    };
+    use crate::{
+        domain::{
+            CreateProfileInput, DuplicateProfileInput, DuplicateProfileMode, InstallReason,
+            InstalledMod, ModLoader, ProfileTarget, ProviderId, ReleaseChannel,
+        },
+        infrastructure::store::JsonStore,
+    };
+    use std::{path::Path, sync::Arc};
 
     #[test]
     fn validates_editable_profile_metadata() {
@@ -381,5 +691,188 @@ mod tests {
             render_mod_list(&mods),
             "JEI12021.23-forge.jar (Just Enough Items)\r\nsodium.jar (Sodium)\r\n"
         );
+    }
+
+    #[tokio::test]
+    async fn duplicates_the_complete_instance_without_changing_the_source() {
+        let directory = tempfile::tempdir().unwrap();
+        let service = test_service(directory.path()).await;
+        let source_path = directory.path().join("source");
+        let source = service
+            .create(profile_input("Original", &source_path))
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(source_path.join("config"))
+            .await
+            .unwrap();
+        tokio::fs::write(source_path.join("mods").join("example.jar"), b"mod")
+            .await
+            .unwrap();
+        tokio::fs::write(source_path.join("config").join("example.toml"), b"config")
+            .await
+            .unwrap();
+        add_installed_mod(&service, &source.id, "example.jar").await;
+        let destination = directory.path().join("complete-copy");
+
+        let result = service
+            .duplicate(
+                &source.id,
+                DuplicateProfileInput {
+                    name: "Cópia completa".into(),
+                    description: Some("Clone".into()),
+                    instance_path: Some(destination.to_string_lossy().into_owned()),
+                    mode: DuplicateProfileMode::Full,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.copied_files, 2);
+        assert_eq!(result.profile.mods.len(), 1);
+        assert_eq!(
+            tokio::fs::read(destination.join("mods/example.jar"))
+                .await
+                .unwrap(),
+            b"mod"
+        );
+        assert_eq!(
+            tokio::fs::read(destination.join("config/example.toml"))
+                .await
+                .unwrap(),
+            b"config"
+        );
+        assert!(
+            tokio::fs::try_exists(source_path.join("config/example.toml"))
+                .await
+                .unwrap()
+        );
+        assert_eq!(service.list().await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn clean_duplicate_copies_only_registered_mods() {
+        let directory = tempfile::tempdir().unwrap();
+        let service = test_service(directory.path()).await;
+        let source_path = directory.path().join("source");
+        let source = service
+            .create(profile_input("Original", &source_path))
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(source_path.join("config"))
+            .await
+            .unwrap();
+        tokio::fs::write(source_path.join("mods/managed.jar"), b"managed")
+            .await
+            .unwrap();
+        tokio::fs::write(source_path.join("mods/manual.jar"), b"manual")
+            .await
+            .unwrap();
+        tokio::fs::write(source_path.join("config/settings.toml"), b"settings")
+            .await
+            .unwrap();
+        add_installed_mod(&service, &source.id, "managed.jar").await;
+        let destination = directory.path().join("clean-copy");
+
+        service
+            .duplicate(
+                &source.id,
+                DuplicateProfileInput {
+                    name: "Cópia limpa".into(),
+                    description: None,
+                    instance_path: Some(destination.to_string_lossy().into_owned()),
+                    mode: DuplicateProfileMode::ModsOnly,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            tokio::fs::try_exists(destination.join("mods/managed.jar"))
+                .await
+                .unwrap()
+        );
+        assert!(
+            !tokio::fs::try_exists(destination.join("mods/manual.jar"))
+                .await
+                .unwrap()
+        );
+        assert!(
+            !tokio::fs::try_exists(destination.join("config/settings.toml"))
+                .await
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn refuses_overlapping_instance_paths() {
+        let source = Path::new("C:/packs/original");
+        assert!(validate_distinct_instance_paths(source, source).is_err());
+        assert!(
+            validate_distinct_instance_paths(source, Path::new("C:/packs/original/copy")).is_err()
+        );
+        assert!(validate_distinct_instance_paths(source, Path::new("C:/packs")).is_err());
+        assert!(validate_distinct_instance_paths(source, Path::new("C:/copies/pack")).is_ok());
+    }
+
+    #[tokio::test]
+    async fn refuses_a_non_empty_destination_without_touching_its_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("occupied");
+        tokio::fs::create_dir(&destination).await.unwrap();
+        tokio::fs::write(destination.join("keep.txt"), b"user data")
+            .await
+            .unwrap();
+
+        assert!(prepare_duplicate_destination(&destination).await.is_err());
+        assert_eq!(
+            tokio::fs::read(destination.join("keep.txt")).await.unwrap(),
+            b"user data"
+        );
+    }
+
+    async fn test_service(root: &Path) -> ProfileService {
+        let store = Arc::new(JsonStore::load(root.join("state.json")).await.unwrap());
+        ProfileService::new(store, root.join("profiles"))
+    }
+
+    fn profile_input(name: &str, path: &Path) -> CreateProfileInput {
+        CreateProfileInput {
+            name: name.into(),
+            description: None,
+            target: ProfileTarget {
+                minecraft_version: "1.20.1".into(),
+                loader: ModLoader::Forge,
+                release_channels: vec![ReleaseChannel::Release],
+            },
+            instance_path: Some(path.to_string_lossy().into_owned()),
+        }
+    }
+
+    async fn add_installed_mod(service: &ProfileService, profile_id: &str, filename: &str) {
+        service
+            .store
+            .update(|database| {
+                database
+                    .profiles
+                    .iter_mut()
+                    .find(|profile| profile.id == profile_id)
+                    .unwrap()
+                    .mods
+                    .push(InstalledMod {
+                        provider: ProviderId::Modrinth,
+                        project_id: "example".into(),
+                        name: "Example".into(),
+                        version_id: "version".into(),
+                        version_number: "1".into(),
+                        filename: filename.into(),
+                        installed_at: String::new(),
+                        reason: InstallReason::Requested,
+                        hashes: Vec::new(),
+                        enabled: true,
+                        required_dependencies: Some(Vec::new()),
+                    });
+            })
+            .await
+            .unwrap();
     }
 }

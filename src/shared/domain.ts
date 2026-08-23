@@ -199,6 +199,21 @@ export interface CreateProfileInput {
   instancePath?: string;
 }
 
+export type DuplicateProfileMode = 'full' | 'modsOnly';
+
+export interface DuplicateProfileInput {
+  name: string;
+  description?: string;
+  instancePath?: string;
+  mode: DuplicateProfileMode;
+}
+
+export interface DuplicateProfileResult {
+  profile: ModpackProfile;
+  copiedFiles: number;
+  copiedBytes: number;
+}
+
 export interface UpdateProfileInput {
   name: string;
   description: string;

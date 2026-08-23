@@ -54,8 +54,10 @@ impl JsonStore {
 
     pub async fn update<R>(&self, mutate: impl FnOnce(&mut Database) -> R) -> AppResult<R> {
         let mut data = self.data.write().await;
-        let result = mutate(&mut data);
-        self.persist(&data).await?;
+        let mut next = data.clone();
+        let result = mutate(&mut next);
+        self.persist(&next).await?;
+        *data = next;
         Ok(result)
     }
 

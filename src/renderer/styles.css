@@ -398,6 +398,22 @@ select option { background: #1a1f18; color: #e7ebe1; }
 .folder-input input { flex: 1; }
 .folder-input button { border: 1px solid #363e32; background: #20251d; color: #aeb5a8; border-radius: 7px; padding: 0 10px; font-size: 8px; display: flex; align-items: center; gap: 5px; cursor: pointer; }
 .folder-input button svg { width: 13px; }
+.duplicate-modal { width: min(760px, 100%); }
+.duplicate-form > .wide { grid-column: 1 / -1; }
+.duplicate-mode-grid { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; padding: 0; border: 0; }
+.duplicate-mode-grid legend { margin-bottom: 8px; color: #70786d; font-size: 11px; font-weight: 800; letter-spacing: .11em; }
+.duplicate-mode-grid > label { min-height: 100px; flex-direction: row; align-items: flex-start; gap: 10px; padding: 13px; border: 1px solid #30372d; border-radius: 9px; background: #181d17; cursor: pointer; letter-spacing: 0; }
+.duplicate-mode-grid > label:hover { border-color: #475240; background: #1c221a; }
+.duplicate-mode-grid > label.selected { border-color: #698148; background: #20291b; box-shadow: inset 0 0 0 1px #39492d; }
+.duplicate-mode-grid input { margin-top: 3px; accent-color: var(--lime); }
+.duplicate-mode-grid label > span { display: flex; flex-direction: column; gap: 8px; }
+.duplicate-mode-grid strong { display: flex; align-items: center; gap: 7px; color: #d5dbcf; font-size: 13px; }
+.duplicate-mode-grid strong svg { width: 16px; color: var(--lime); }
+.duplicate-mode-grid strong em { padding: 3px 5px; border-radius: 4px; background: #344126; color: #b9d886; font-size: 9px; font-style: normal; letter-spacing: .06em; }
+.duplicate-mode-grid small { color: #7c8578; font-size: 11px; font-weight: 500; line-height: 1.5; }
+.duplicate-form .field-hint { text-align: left; }
+.duplicate-source { max-width: 220px; overflow: hidden; color: #727b6e; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.duplicate-modal button:disabled, .duplicate-modal input:disabled, .duplicate-modal textarea:disabled { cursor: not-allowed; opacity: .65; }
 
 .toast { position: fixed; z-index: 30; right: 22px; bottom: 22px; max-width: 440px; min-height: 48px; border: 1px solid #3b4634; background: #1b2118; color: #c8d0c1; border-radius: 9px; box-shadow: 0 15px 40px rgba(0,0,0,.4); display: flex; align-items: center; gap: 9px; padding: 10px 11px; font-size: 9px; animation: toast-in .2s ease; }
 @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } }
@@ -606,6 +622,11 @@ body { font-size: 15px; }
   .app-shell { grid-template-columns: 242px minmax(0, 1fr); }
   .card-grid { grid-template-columns: repeat(2, minmax(260px, 1fr)); }
   .preset-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px) {
+  .duplicate-mode-grid { grid-template-columns: 1fr; }
+  .duplicate-source { display: none; }
 }
 
 @media (min-width: 1700px) {

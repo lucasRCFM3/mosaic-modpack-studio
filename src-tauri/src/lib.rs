@@ -23,6 +23,7 @@ pub fn run() {
             catalog_game_versions,
             profiles_list,
             profiles_create,
+            profiles_duplicate,
             profiles_update,
             profiles_remove,
             profiles_choose_folder,

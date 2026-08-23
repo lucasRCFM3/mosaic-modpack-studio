@@ -412,6 +412,30 @@ pub struct CreateProfileInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DuplicateProfileInput {
+    pub name: String,
+    pub description: Option<String>,
+    pub instance_path: Option<String>,
+    pub mode: DuplicateProfileMode,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum DuplicateProfileMode {
+    Full,
+    ModsOnly,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateProfileResult {
+    pub profile: ModpackProfile,
+    pub copied_files: u64,
+    pub copied_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateProfileInput {
     pub name: String,
     pub description: String,
