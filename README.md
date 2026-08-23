@@ -23,6 +23,7 @@ Aplicativo desktop local-first, construído com **Rust + Tauri 2 + React**, para
 - downloads concorrentes por HTTPS, arquivo `.part`, verificação de hash e renomeação;
 - perfis independentes com nome e descrição editáveis, registro dos mods e lockfile JSON exportável;
 - remoção conservadora que preserva qualquer dependência ainda referenciada por outro mod instalado;
+- identifica na lista quais mods utilizam cada dependência, inclusive em cadeias transitivas;
 - predefinições reutilizáveis que verificam versões compatíveis e resolvem todas as dependências em lote;
 - chave da CurseForge guardada no cofre de credenciais do sistema operacional;
 - frontend sem acesso direto ao sistema de arquivos ou aos segredos;
@@ -38,6 +39,8 @@ Aplicativo desktop local-first, construído com **Rust + Tauri 2 + React**, para
 | Incompatível (`incompatible`) | Bloqueia o plano quando o conflito está presente |
 
 Existe uma preferência para pré-selecionar opcionais, mas ela é **opt-in** e vem desativada em instalações novas.
+
+Na tela do modpack, cada dependência informa quais mods principais precisam dela. Relações transitivas são apresentadas pela origem mais útil para o usuário: se `Mod A` usa `Biblioteca B`, que usa `Núcleo C`, tanto B quanto C indicam que são usados por A. A pesquisa da lista também considera esses nomes relacionados.
 
 Quando uma fonte não fornece URL para aplicativos de terceiros, o Mosaic procura uma cópia equivalente na outra fonte e só a aceita após conferir a identidade do projeto, versão do Minecraft e loader. Se nenhuma alternativa segura existir, o item passa a exigir instalação manual, mas não bloqueia os demais downloads do plano.
 

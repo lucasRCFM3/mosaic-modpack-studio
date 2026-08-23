@@ -44,6 +44,8 @@ Essa separação garante que dependências opcionais não sejam instaladas por a
 
 Antes de remover um mod, o serviço recompõe o grafo combinando as relações registradas no lockfile com metadados atuais das duas plataformas. A coleta de dependências órfãs usa referências de **todos** os mods restantes, independentemente de terem sido originalmente solicitados, opcionais ou instalados como dependência. Se algum trecho do grafo não puder ser verificado, a coleta automática é desativada e somente o mod explicitamente solicitado pode ser removido; dependências são preservadas por segurança.
 
+O renderer deriva um índice reverso dessas relações para explicar o uso de cada dependência sem duplicar estado persistido. A travessia reversa chega aos mods raiz, permitindo apresentar relações transitivas e pesquisar uma biblioteca pelo nome dos mods que a utilizam.
+
 ### Resolução de predefinições
 
 Uma predefinição guarda referências estáveis de projetos e nomes para apresentação, nunca URLs ou arquivos de uma versão específica. Ao aplicá-la, todos os projetos entram como raízes do mesmo `ResolveContext`. Isso permite escolher versões adequadas ao perfil atual, deduplicar dependências compartilhadas e produzir um único plano atômico. Qualquer raiz incompatível gera um erro e impede a instalação parcial do lote.

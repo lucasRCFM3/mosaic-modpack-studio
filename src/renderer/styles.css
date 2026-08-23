@@ -236,7 +236,8 @@ select option { background: #1a1f18; color: #e7ebe1; }
 .installed-no-results { min-height: 260px; }
 .path-chip { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #7b8375; font-size: 8px; padding: 7px 9px; background: #1b2019; border: 1px solid #2d342a; border-radius: 6px; }
 .path-chip svg { width: 12px; vertical-align: middle; margin-right: 5px; }
-.installed-table-head, .installed-row { display: grid; grid-template-columns: minmax(220px, 2fr) minmax(90px, .7fr) minmax(90px, .7fr) minmax(140px, 1fr) 65px; align-items: center; gap: 15px; padding: 0 18px; }
+.installed-list { overflow-x: auto; }
+.installed-table-head, .installed-row { min-width: 780px; display: grid; grid-template-columns: minmax(220px, 2fr) minmax(90px, .7fr) minmax(90px, .7fr) minmax(210px, 1.25fr) 65px; align-items: center; gap: 15px; padding: 0 18px; }
 .installed-table-head { min-height: 36px; color: #5f675c; background: #171b15; font-size: 7px; letter-spacing: .12em; font-weight: 800; border-bottom: 1px solid #242a21; }
 .installed-row { min-height: 61px; border-bottom: 1px solid #22271f; color: #969e91; font-size: 9px; }
 .installed-row:last-child { border-bottom: 0; }
@@ -245,6 +246,8 @@ select option { background: #1a1f18; color: #e7ebe1; }
 .installed-name strong { font-size: 10px; color: #d1d6cb; min-width: 0; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .installed-name small { display: block; font-size: 7px; color: #636b60; margin-top: 3px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .installed-row .provider { font-style: normal; text-transform: none; letter-spacing: 0; }
+.installed-reason { min-width: 0; display: flex; flex-direction: column; gap: 4px; color: #a7afa1; }
+.installed-reason small { display: block; min-width: 0; overflow: hidden; color: #7f9176; font-size: 7px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .row-actions { display: flex; justify-content: flex-end; gap: 3px; }
 .row-actions button { width: 27px; height: 27px; border: 0; background: transparent; color: #6c7568; border-radius: 5px; display: grid; place-items: center; cursor: pointer; }
 .row-actions button:hover { color: #d5dad0; background: #242a21; }
@@ -544,9 +547,10 @@ body { font-size: 15px; }
 .installed-panel > header h2 { font-size: 17px; }
 .installed-panel > header p, .path-chip { font-size: 12px; }
 .installed-table-head { min-height: 42px; font-size: 11px; }
-.installed-row { min-height: 68px; font-size: 13px; }
+.installed-row { min-height: 76px; font-size: 13px; }
 .installed-name strong { font-size: 14px; }
 .installed-name small { font-size: 11px; }
+.installed-reason small { font-size: 11px; }
 .delete-profile { font-size: 12px; }
 
 .secure-chip { font-size: 12px; }
