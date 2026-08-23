@@ -29,6 +29,8 @@ pub fn run() {
             profiles_choose_folder,
             profiles_export,
             profiles_export_mod_list,
+            mods_organization_preview,
+            mods_organization_export,
             presets_list,
             presets_create,
             presets_update,

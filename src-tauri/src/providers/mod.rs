@@ -27,6 +27,9 @@ pub trait ModProvider: Send + Sync {
         version_id: Option<&str>,
     ) -> AppResult<Option<ProjectVersion>>;
     async fn get_version_by_id(&self, version_id: &str) -> AppResult<ProjectVersion>;
+    async fn get_version_side(&self, _version_id: &str) -> AppResult<ProjectSide> {
+        Ok(ProjectSide::Unknown)
+    }
     async fn project_url(&self, project_id: &str) -> AppResult<String>;
     async fn game_versions(&self) -> AppResult<Vec<String>> {
         Err(crate::error::AppError::Message(

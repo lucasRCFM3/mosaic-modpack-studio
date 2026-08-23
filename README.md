@@ -23,6 +23,7 @@ Aplicativo desktop local-first, construído com **Rust + Tauri 2 + React**, para
 - downloads concorrentes por HTTPS, arquivo `.part`, verificação de hash e renomeação;
 - perfis independentes com nome e descrição editáveis, registro dos mods e lockfile JSON exportável;
 - duplicação transacional de modpacks, com cópia completa ou uma nova instância somente com os mods registrados;
+- separação revisável dos mods em Cliente, Servidor, Cliente e Servidor e Não classificados;
 - remoção conservadora que preserva qualquer dependência ainda referenciada por outro mod instalado;
 - identifica na lista quais mods utilizam cada dependência, inclusive em cadeias transitivas;
 - predefinições reutilizáveis que verificam versões compatíveis e resolvem todas as dependências em lote;
@@ -56,6 +57,12 @@ Em **Descobrir**, use **À lista** nos projetos desejados e continue pesquisando
 Em **Meu modpack → Duplicar**, escolha o nome e, opcionalmente, uma pasta vazia. A **Cópia completa** preserva toda a instância, incluindo mods nas versões atuais, configurações, saves, resource packs e scripts. A **Cópia limpa** leva somente os arquivos de mods registrados pelo Mosaic, mantendo o mesmo Minecraft, loader e grafo de dependências sem copiar saves, configurações, logs ou JARs manuais.
 
 A cópia é montada em uma pasta temporária e o perfil novo só aparece depois da conclusão. Pastas não vazias, destinos sobrepostos à origem e links simbólicos são recusados para impedir sobrescrita, recursão e escape da instância.
+
+## Separar mods por ambiente
+
+Em **Meu modpack → Separar mods**, o Mosaic consulta o ambiente informado pelo provedor original. Quando a CurseForge não possui essa informação, ele procura com verificação de identidade o projeto equivalente na Modrinth. A tela de revisão permite pesquisar e corrigir manualmente qualquer classificação antes de gerar quatro pastas: `Cliente`, `Servidor`, `Cliente e Servidor` e `Não classificados`.
+
+Por segurança, a função **copia** os JARs para uma exportação organizada e preserva a pasta `mods/` ativa. Colocar segundas cópias dentro dela poderia fazer o loader carregar mods duplicados ou deixar de encontrá-los em subpastas. O destino inclui um `manifesto.txt`, nunca sobrescreve uma exportação existente e não pode ficar dentro da pasta ativa de mods.
 
 ## Predefinições de mods
 

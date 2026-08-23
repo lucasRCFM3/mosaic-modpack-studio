@@ -5,6 +5,8 @@ import type {
   CreateProfileInput,
   DuplicateProfileInput,
   InstallProgress,
+  ModOrganizationAssignment,
+  ModOrganizationPlan,
   ModPreset,
   ModpackProfile,
   ProjectRef,
@@ -49,6 +51,9 @@ export function useMosaic() {
   const [installing, setInstalling] = useState(false);
   const [updatingPlan, setUpdatingPlan] = useState(false);
   const [progress, setProgress] = useState<Record<string, InstallProgress>>({});
+  const [organizationPlan, setOrganizationPlan] = useState<ModOrganizationPlan>();
+  const [classifyingMods, setClassifyingMods] = useState(false);
+  const [organizingMods, setOrganizingMods] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'success' | 'error' | 'info'; text: string }>();
 
   const currentProfile = useMemo(
@@ -80,6 +85,7 @@ export function useMosaic() {
   useEffect(() => {
     if (!currentProfile) return;
     localStorage.setItem('mosaic:last-profile', currentProfile.id);
+    setOrganizationPlan(undefined);
     setFilters((current) => ({ ...current, ...currentProfile.target }));
   }, [currentProfile?.id]);
 
@@ -292,6 +298,33 @@ export function useMosaic() {
     if (path) setNotice({ tone: 'success', text: 'Lista TXT de mods gerada com sucesso.' });
   };
 
+  const previewModOrganization = async () => {
+    if (!currentProfile) return;
+    setClassifyingMods(true);
+    try {
+      setOrganizationPlan(await window.mosaic.mods.organizationPreview(currentProfile.id));
+    } catch (error) {
+      setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível classificar os mods.' });
+    } finally {
+      setClassifyingMods(false);
+    }
+  };
+
+  const exportModOrganization = async (planId: string, assignments: ModOrganizationAssignment[]): Promise<boolean> => {
+    if (!currentProfile) return false;
+    setOrganizingMods(true);
+    try {
+      const result = await window.mosaic.mods.organizationExport(currentProfile.id, planId, assignments);
+      if (!result) return false;
+      setOrganizationPlan(undefined);
+      const unknown = result.unknown ? ` ${result.unknown} ficaram em “Não classificados”.` : '';
+      setNotice({ tone: result.unknown ? 'info' : 'success', text: `${result.copiedFiles} mods organizados em Cliente, Servidor e Cliente e Servidor.${unknown} Pasta: ${result.destination}` });
+      return true;
+    } finally {
+      setOrganizingMods(false);
+    }
+  };
+
   const savePreset = async (input: SavePresetInput, presetId?: string) => {
     const saved = presetId
       ? await window.mosaic.presets.update(presetId, input)
@@ -324,7 +357,8 @@ export function useMosaic() {
   return {
     profiles, currentProfile, presets, settings, gameVersions, filters, setFilters, catalog, searching,
     resolvingKey, resolvingPresetId, resolvingBatch, plan, setPlan, installing, updatingPlan, progress, notice, setNotice, installedKeys,
+    organizationPlan, setOrganizationPlan, classifyingMods, organizingMods,
     queuedProjects, queuedKeys,
-    chooseProfile, createProfile, duplicateProfile, updateProfile, removeProfile, savePreset, removePreset, resolvePreset, resolveProject, addToInstallQueue, removeFromInstallQueue, clearInstallQueue, resolveInstallQueue, toggleOptionalDependency, setAllOptionalDependencies, installPlan, removeMod, saveSettings, exportProfile, exportModList,
+    chooseProfile, createProfile, duplicateProfile, updateProfile, removeProfile, savePreset, removePreset, resolvePreset, resolveProject, addToInstallQueue, removeFromInstallQueue, clearInstallQueue, resolveInstallQueue, toggleOptionalDependency, setAllOptionalDependencies, installPlan, removeMod, saveSettings, exportProfile, exportModList, previewModOrganization, exportModOrganization,
   };
 }

@@ -65,6 +65,8 @@ struct RawVersion {
     downloads: u64,
     files: Vec<RawFile>,
     dependencies: Vec<RawDependency>,
+    #[serde(default)]
+    environment: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -91,7 +93,7 @@ struct RawDependency {
 impl ModrinthProvider {
     pub fn new() -> AppResult<Self> {
         let client = reqwest::Client::builder()
-            .user_agent("mosaic-modpack-studio/0.10.0 (tauri; rust)")
+            .user_agent("mosaic-modpack-studio/0.11.0 (tauri; rust)")
             .timeout(std::time::Duration::from_secs(20))
             .build()?;
         Ok(Self { client })
@@ -332,6 +334,17 @@ impl ModProvider for ModrinthProvider {
         Ok(self.version_from_raw(version))
     }
 
+    async fn get_version_side(&self, version_id: &str) -> AppResult<ProjectSide> {
+        let version: RawVersion = self
+            .get(&format!("version/{}", urlencoding(version_id)), &[])
+            .await?;
+        Ok(version
+            .environment
+            .as_deref()
+            .map(side_from_environment)
+            .unwrap_or(ProjectSide::Unknown))
+    }
+
     async fn project_url(&self, project_id: &str) -> AppResult<String> {
         Ok(self.get_project(project_id).await?.website_url)
     }
@@ -360,9 +373,43 @@ fn side_of(client: &str, server: &str) -> ProjectSide {
         _ => ProjectSide::Unknown,
     }
 }
+fn side_from_environment(environment: &str) -> ProjectSide {
+    match environment {
+        "client_only" | "client_only_server_optional" | "singleplayer_only" => ProjectSide::Client,
+        "server_only" | "server_only_client_optional" | "dedicated_server_only" => {
+            ProjectSide::Server
+        }
+        "client_and_server" | "client_or_server" | "client_or_server_prefers_both" => {
+            ProjectSide::Both
+        }
+        _ => ProjectSide::Unknown,
+    }
+}
 fn truncate(value: &str) -> String {
     value.chars().take(180).collect()
 }
 fn urlencoding(value: &str) -> String {
     url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_modrinths_version_environments_to_export_categories() {
+        assert_eq!(
+            side_from_environment("client_only_server_optional"),
+            ProjectSide::Client
+        );
+        assert_eq!(
+            side_from_environment("dedicated_server_only"),
+            ProjectSide::Server
+        );
+        assert_eq!(
+            side_from_environment("client_and_server"),
+            ProjectSide::Both
+        );
+        assert_eq!(side_from_environment("unknown"), ProjectSide::Unknown);
+    }
 }

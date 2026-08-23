@@ -3,25 +3,29 @@ import { projectKey, type InstalledMod, type ModpackProfile, type ProjectRef } f
 import { buildDependencyUsage, filterInstalledMods, formatDependencyUsers } from '../lib/installed-mods';
 import { Icon } from './Icon';
 
-export function ModpackPage({ profile, onDiscover, onEdit, onDuplicate, onRemove, onExport, onExportModList, onDeleteProfile }: {
+export function ModpackPage({ profile, classifyingMods, onDiscover, onEdit, onDuplicate, onOrganize, onRemove, onExport, onExportModList, onDeleteProfile }: {
   profile?: ModpackProfile;
+  classifyingMods: boolean;
   onDiscover: () => void;
   onEdit: () => void;
   onDuplicate: () => void;
+  onOrganize: () => void;
   onRemove: (ref: ProjectRef) => void;
   onExport: () => void;
   onExportModList: () => void;
   onDeleteProfile: () => void;
 }) {
   if (!profile) return null;
-  return <ModpackContent profile={profile} onDiscover={onDiscover} onEdit={onEdit} onDuplicate={onDuplicate} onRemove={onRemove} onExport={onExport} onExportModList={onExportModList} onDeleteProfile={onDeleteProfile}/>;
+  return <ModpackContent profile={profile} classifyingMods={classifyingMods} onDiscover={onDiscover} onEdit={onEdit} onDuplicate={onDuplicate} onOrganize={onOrganize} onRemove={onRemove} onExport={onExport} onExportModList={onExportModList} onDeleteProfile={onDeleteProfile}/>;
 }
 
-function ModpackContent({ profile, onDiscover, onEdit, onDuplicate, onRemove, onExport, onExportModList, onDeleteProfile }: {
+function ModpackContent({ profile, classifyingMods, onDiscover, onEdit, onDuplicate, onOrganize, onRemove, onExport, onExportModList, onDeleteProfile }: {
   profile: ModpackProfile;
+  classifyingMods: boolean;
   onDiscover: () => void;
   onEdit: () => void;
   onDuplicate: () => void;
+  onOrganize: () => void;
   onRemove: (ref: ProjectRef) => void;
   onExport: () => void;
   onExportModList: () => void;
@@ -32,7 +36,7 @@ function ModpackContent({ profile, onDiscover, onEdit, onDuplicate, onRemove, on
   const visibleMods = filterInstalledMods(profile.mods, query);
   const dependencyUsage = useMemo(() => buildDependencyUsage(profile.mods), [profile.mods]);
   return <div className="page modpack-page">
-    <section className="pack-heading"><div><span className="eyebrow"><Icon name="box"/> INSTÂNCIA LOCAL</span><h1>{profile.name}</h1><p>{profile.description || 'Seu modpack modular, reproduzível e verificado.'}</p></div><div className="pack-actions"><button className="button secondary" onClick={onEdit}><Icon name="settings"/> Editar</button><button className="button secondary" onClick={onDuplicate}><Icon name="copy"/> Duplicar</button><button className="button secondary" onClick={onExportModList}><Icon name="export"/> Gerar TXT</button><button className="button secondary" onClick={onExport}><Icon name="export"/> Exportar lockfile</button><button className="button primary" onClick={onDiscover}><Icon name="plus"/> Adicionar mods</button></div></section>
+    <section className="pack-heading"><div><span className="eyebrow"><Icon name="box"/> INSTÂNCIA LOCAL</span><h1>{profile.name}</h1><p>{profile.description || 'Seu modpack modular, reproduzível e verificado.'}</p></div><div className="pack-actions"><button className="button secondary" onClick={onEdit}><Icon name="settings"/> Editar</button><button className="button secondary" onClick={onDuplicate}><Icon name="copy"/> Duplicar</button><button className="button secondary" disabled={!profile.mods.length || classifyingMods} onClick={onOrganize}>{classifyingMods ? <><span className="spinner"/> Analisando…</> : <><Icon name="layers"/> Separar mods</>}</button><button className="button secondary" onClick={onExportModList}><Icon name="export"/> Gerar TXT</button><button className="button secondary" onClick={onExport}><Icon name="export"/> Exportar lockfile</button><button className="button primary" onClick={onDiscover}><Icon name="plus"/> Adicionar mods</button></div></section>
     <div className="pack-metrics"><div><span><Icon name="package"/></span><div><strong>{profile.mods.length}</strong><small>Mods instalados</small></div></div><div><span><Icon name="layers"/></span><div><strong>{profile.mods.filter(({ reason }) => reason !== 'requested').length}</strong><small>Dependências automáticas</small></div></div><div><span><Icon name="shield"/></span><div><strong>{profile.mods.filter(({ hashes }) => hashes.length).length}</strong><small>Arquivos verificáveis</small></div></div><div><span><Icon name="hard-drive"/></span><div><strong>{profile.target.minecraftVersion}</strong><small>{profile.target.loader} · release + beta</small></div></div></div>
     <section className="installed-panel">
       <header><div><h2>Conteúdo instalado</h2><p>Ao remover um mod, dependências obrigatórias órfãs também são removidas; as compartilhadas são preservadas.</p></div><span className="path-chip"><Icon name="folder"/>{profile.instancePath}</span></header>

@@ -434,6 +434,50 @@ pub struct DuplicateProfileResult {
     pub copied_bytes: u64,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum OrganizationClassificationSource {
+    Provider,
+    CrossProvider,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModOrganizationItem {
+    pub project: ProjectRef,
+    pub name: String,
+    pub filename: String,
+    pub side: ProjectSide,
+    pub source: OrganizationClassificationSource,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModOrganizationPlan {
+    pub id: String,
+    pub items: Vec<ModOrganizationItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModOrganizationAssignment {
+    pub project: ProjectRef,
+    pub side: ProjectSide,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModOrganizationResult {
+    pub destination: String,
+    pub copied_files: u64,
+    pub copied_bytes: u64,
+    pub client: usize,
+    pub server: usize,
+    pub both: usize,
+    pub unknown: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateProfileInput {

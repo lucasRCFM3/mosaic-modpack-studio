@@ -1,6 +1,7 @@
 pub mod catalog;
 mod dependency_reconciliation;
 pub mod download;
+pub mod organization;
 pub mod presets;
 pub mod profiles;
 mod provider_fallback;

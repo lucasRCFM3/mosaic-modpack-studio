@@ -31,6 +31,8 @@ export const mosaicApi: MosaicApi = {
     resolve: (profileId, presetId, selectedOptional = []) => call('presets_resolve', { profileId, presetId, selectedOptional }),
   },
   mods: {
+    organizationPreview: (profileId) => call('mods_organization_preview', { profileId }),
+    organizationExport: (profileId, planId, assignments) => call('mods_organization_export', { profileId, planId, assignments }),
     resolve: (profileId, project, selectedOptional = []) => call('mods_resolve', { profileId, project, selectedOptional }),
     resolveMany: (profileId, projects, selectedOptional = []) => call('mods_resolve_many', { profileId, projects, selectedOptional }),
     install: (profileId, planId) => call('mods_install', { profileId, planId }),

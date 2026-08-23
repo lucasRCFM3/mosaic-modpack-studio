@@ -52,6 +52,12 @@ O `ProfileService` serializa duplicações e valida que origem e destino não se
 
 O modo completo percorre toda a árvore. O modo limpo copia apenas os nomes de arquivos registrados no lockfile para `mods/`; metadados de projeto, versões, hashes, motivos e arestas de dependência são clonados para que as duas instâncias evoluam independentemente.
 
+### Organização por ambiente
+
+O `ModOrganizationService` cria um plano temporário vinculado ao ID e ao `updatedAt` do perfil. Cada mod é consultado com concorrência limitada no provedor original; resultados sem ambiente passam pela busca conservadora de projeto equivalente no outro catálogo. A interface recebe apenas projeto, nome, arquivo, ambiente e origem da classificação, permitindo revisão manual antes da escrita.
+
+A exportação revalida o plano e copia somente nomes de arquivos registrados e contidos em `mods/`. O destino é uma pasta nova, nunca sobrescrita, com quatro categorias e manifesto. Destinos dentro de `mods/`, links simbólicos, arquivos especiais e alterações concorrentes no perfil são recusados; falhas removem o diretório de estágio.
+
 ### Resolução de predefinições
 
 Uma predefinição guarda referências estáveis de projetos e nomes para apresentação, nunca URLs ou arquivos de uma versão específica. Ao aplicá-la, todos os projetos entram como raízes do mesmo `ResolveContext`. Isso permite escolher versões adequadas ao perfil atual, deduplicar dependências compartilhadas e produzir um único plano atômico. Qualquer raiz incompatível gera um erro e impede a instalação parcial do lote.

@@ -214,6 +214,36 @@ export interface DuplicateProfileResult {
   copiedBytes: number;
 }
 
+export type OrganizationClassificationSource = 'provider' | 'crossProvider' | 'unknown';
+
+export interface ModOrganizationItem {
+  project: ProjectRef;
+  name: string;
+  filename: string;
+  side: ProjectSide;
+  source: OrganizationClassificationSource;
+}
+
+export interface ModOrganizationPlan {
+  id: string;
+  items: ModOrganizationItem[];
+}
+
+export interface ModOrganizationAssignment {
+  project: ProjectRef;
+  side: ProjectSide;
+}
+
+export interface ModOrganizationResult {
+  destination: string;
+  copiedFiles: number;
+  copiedBytes: number;
+  client: number;
+  server: number;
+  both: number;
+  unknown: number;
+}
+
 export interface UpdateProfileInput {
   name: string;
   description: string;

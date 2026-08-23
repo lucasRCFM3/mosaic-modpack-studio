@@ -6,6 +6,9 @@ import type {
   DuplicateProfileResult,
   InstallProgress,
   InstallResult,
+  ModOrganizationAssignment,
+  ModOrganizationPlan,
+  ModOrganizationResult,
   ModPreset,
   ModpackProfile,
   ProjectRef,
@@ -40,6 +43,8 @@ export interface MosaicApi {
     resolve(profileId: string, presetId: string, selectedOptional?: ProjectRef[]): Promise<ResolutionPlan>;
   };
   mods: {
+    organizationPreview(profileId: string): Promise<ModOrganizationPlan>;
+    organizationExport(profileId: string, planId: string, assignments: ModOrganizationAssignment[]): Promise<ModOrganizationResult | undefined>;
     resolve(profileId: string, project: ProjectRef, selectedOptional?: ProjectRef[]): Promise<ResolutionPlan>;
     resolveMany(profileId: string, projects: ProjectRef[], selectedOptional?: ProjectRef[]): Promise<ResolutionPlan>;
     install(profileId: string, planId: string): Promise<InstallResult>;

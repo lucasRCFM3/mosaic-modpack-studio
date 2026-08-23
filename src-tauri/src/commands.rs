@@ -113,6 +113,44 @@ pub async fn profiles_export_mod_list(
 }
 
 #[tauri::command]
+pub async fn mods_organization_preview(
+    state: State<'_, AppState>,
+    profile_id: String,
+) -> Result<ModOrganizationPlan, String> {
+    validate_uuid(&profile_id)?;
+    state.organization.preview(&profile_id).await.message()
+}
+
+#[tauri::command]
+pub async fn mods_organization_export(
+    state: State<'_, AppState>,
+    profile_id: String,
+    plan_id: String,
+    assignments: Vec<ModOrganizationAssignment>,
+) -> Result<Option<ModOrganizationResult>, String> {
+    validate_uuid(&profile_id)?;
+    validate_uuid(&plan_id)?;
+    for assignment in &assignments {
+        validate_project(&assignment.project)?;
+    }
+    let profile = state.profiles.get(&profile_id).await.message()?;
+    let Some(folder) = rfd::AsyncFileDialog::new()
+        .set_title("Escolha onde criar as pastas organizadas")
+        .set_directory(&profile.instance_path)
+        .pick_folder()
+        .await
+    else {
+        return Ok(None);
+    };
+    state
+        .organization
+        .export(&profile_id, &plan_id, assignments, folder.path())
+        .await
+        .message()
+        .map(Some)
+}
+
+#[tauri::command]
 pub async fn presets_list(state: State<'_, AppState>) -> Result<Vec<ModPreset>, String> {
     Ok(state.presets.list().await)
 }
