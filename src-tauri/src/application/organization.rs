@@ -1,4 +1,8 @@
-use super::{profiles::ProfileService, provider_fallback::find_equivalent_project};
+use super::{
+    file_integrity::{hash_file, preferred_hash},
+    profiles::ProfileService,
+    provider_fallback::find_equivalent_project,
+};
 use crate::{
     domain::*,
     error::{AppError, AppResult},
@@ -24,7 +28,13 @@ pub struct ModOrganizationService {
 struct StoredOrganizationPlan {
     profile_id: String,
     expected_updated_at: String,
-    items: Vec<ModOrganizationItem>,
+    items: Vec<StoredOrganizationItem>,
+}
+
+#[derive(Clone)]
+struct StoredOrganizationItem {
+    item: ModOrganizationItem,
+    hashes: Vec<FileHash>,
 }
 
 impl ModOrganizationService {
@@ -54,7 +64,12 @@ impl ModOrganizationService {
             .buffer_unordered(6)
             .collect()
             .await;
-        items.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+        items.sort_by(|left, right| {
+            left.item
+                .name
+                .to_lowercase()
+                .cmp(&right.item.name.to_lowercase())
+        });
 
         let id = Uuid::new_v4().to_string();
         let stored = StoredOrganizationPlan {
@@ -69,7 +84,10 @@ impl ModOrganizationService {
                 plans.remove(&oldest);
             }
         }
-        Ok(ModOrganizationPlan { id, items })
+        Ok(ModOrganizationPlan {
+            id,
+            items: items.into_iter().map(|entry| entry.item).collect(),
+        })
     }
 
     pub async fn export(
@@ -130,7 +148,7 @@ async fn classify_mod(
     providers: &ProviderRegistry,
     target: &ProfileTarget,
     installed: InstalledMod,
-) -> ModOrganizationItem {
+) -> StoredOrganizationItem {
     let provider = providers.get(installed.provider);
     if provider.is_enabled() {
         if let Ok(side) = provider.get_version_side(&installed.version_id).await {
@@ -190,13 +208,17 @@ fn organization_item(
     installed: InstalledMod,
     side: ProjectSide,
     source: OrganizationClassificationSource,
-) -> ModOrganizationItem {
-    ModOrganizationItem {
-        project: installed.as_ref(),
-        name: installed.name,
-        filename: installed.filename,
-        side,
-        source,
+) -> StoredOrganizationItem {
+    let project = installed.as_ref();
+    StoredOrganizationItem {
+        hashes: installed.hashes,
+        item: ModOrganizationItem {
+            project,
+            name: installed.name,
+            filename: installed.filename,
+            side,
+            source,
+        },
     }
 }
 
@@ -222,7 +244,7 @@ fn synthetic_summary(installed: &InstalledMod) -> ProjectSummary {
 
 async fn write_organized_export(
     profile: &ModpackProfile,
-    items: &[ModOrganizationItem],
+    items: &[StoredOrganizationItem],
     assignments: &HashMap<String, ProjectSide>,
     destination_parent: &Path,
 ) -> AppResult<ModOrganizationResult> {
@@ -247,6 +269,7 @@ async fn write_organized_export(
                 .into(),
         ));
     }
+    let mut file_index = ModFileIndex::scan(&mods_root).await?;
 
     let destination = unique_destination(&parent, &profile.name).await?;
     let staging = parent.join(format!(".mosaic-organize-{}.part", Uuid::new_v4()));
@@ -269,7 +292,9 @@ async fn write_organized_export(
     let mut copied_files = 0u64;
     let mut copied_bytes = 0u64;
     let mut manifest_entries = Vec::new();
-    for item in items {
+    let mut warnings = Vec::new();
+    for stored in items {
+        let item = &stored.item;
         let side = assignments
             .get(&item.project.key())
             .copied()
@@ -282,24 +307,23 @@ async fn write_organized_export(
                 return Err(error);
             }
         };
-        let source = mods_root.join(filename);
-        let metadata = match tokio::fs::symlink_metadata(&source).await {
-            Ok(metadata) => metadata,
+        let source = match file_index
+            .resolve(&mods_root, filename, &stored.hashes)
+            .await
+        {
+            Ok(Some(source)) => source,
+            Ok(None) => {
+                warnings.push(format!(
+                    "{} foi ignorado porque o arquivo {} não existe mais na pasta de mods.",
+                    item.name, item.filename
+                ));
+                continue;
+            }
             Err(error) => {
                 let _ = tokio::fs::remove_dir_all(&staging).await;
-                return Err(AppError::Message(format!(
-                    "{} não pôde ser localizado: {error}",
-                    item.name
-                )));
+                return Err(error);
             }
         };
-        if !metadata.is_file() || metadata.file_type().is_symlink() {
-            let _ = tokio::fs::remove_dir_all(&staging).await;
-            return Err(AppError::Message(format!(
-                "{} não é um arquivo de mod regular seguro.",
-                item.name
-            )));
-        }
         let bytes = match tokio::fs::copy(&source, staging.join(folder).join(filename)).await {
             Ok(bytes) => bytes,
             Err(error) => {
@@ -314,12 +338,18 @@ async fn write_organized_export(
     }
     manifest_entries.sort_by_key(|entry| entry.to_lowercase());
     let manifest = format!(
-        "Mosaic Modpack Studio 0.11.0\r\nModpack: {}\r\nMinecraft: {} · {}\r\nGerado em: {}\r\n\r\n{}\r\n",
+        "Mosaic Modpack Studio 0.11.1\r\nModpack: {}\r\nMinecraft: {} · {}\r\nGerado em: {}\r\nArquivos ignorados: {}\r\n\r\n{}{}\r\n",
         profile.name,
         profile.target.minecraft_version,
         profile.target.loader.as_str(),
         Utc::now().to_rfc3339(),
-        manifest_entries.join("\r\n")
+        warnings.len(),
+        manifest_entries.join("\r\n"),
+        if warnings.is_empty() {
+            String::new()
+        } else {
+            format!("\r\n\r\nAVISOS\r\n{}", warnings.join("\r\n"))
+        }
     );
     if let Err(error) = tokio::fs::write(staging.join("manifesto.txt"), manifest).await {
         let _ = tokio::fs::remove_dir_all(&staging).await;
@@ -337,7 +367,100 @@ async fn write_organized_export(
         server: counts[1],
         both: counts[2],
         unknown: counts[3],
+        skipped_files: warnings.len(),
+        warnings,
     })
+}
+
+struct ModFileIndex {
+    files: Vec<PathBuf>,
+    by_name: HashMap<String, Vec<PathBuf>>,
+    hashes: HashMap<(PathBuf, HashAlgorithm), String>,
+}
+
+impl ModFileIndex {
+    async fn scan(mods_root: &Path) -> AppResult<Self> {
+        let mut files = Vec::new();
+        let mut directories = vec![mods_root.to_path_buf()];
+        while let Some(directory) = directories.pop() {
+            let mut entries = tokio::fs::read_dir(&directory).await?;
+            while let Some(entry) = entries.next_entry().await? {
+                let file_type = entry.file_type().await?;
+                if file_type.is_symlink() {
+                    continue;
+                }
+                if file_type.is_dir() {
+                    directories.push(entry.path());
+                    continue;
+                }
+                if file_type.is_file()
+                    && entry
+                        .path()
+                        .extension()
+                        .is_some_and(|extension| extension.eq_ignore_ascii_case("jar"))
+                {
+                    files.push(entry.path());
+                }
+            }
+        }
+        files.sort();
+        let mut by_name: HashMap<String, Vec<PathBuf>> = HashMap::new();
+        for path in &files {
+            if let Some(filename) = path.file_name() {
+                by_name
+                    .entry(filename.to_string_lossy().to_lowercase())
+                    .or_default()
+                    .push(path.clone());
+            }
+        }
+        Ok(Self {
+            files,
+            by_name,
+            hashes: HashMap::new(),
+        })
+    }
+
+    async fn resolve(
+        &mut self,
+        mods_root: &Path,
+        filename: &std::ffi::OsStr,
+        known_hashes: &[FileHash],
+    ) -> AppResult<Option<PathBuf>> {
+        let registered = mods_root.join(filename);
+        match tokio::fs::symlink_metadata(&registered).await {
+            Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+                return Ok(Some(registered));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+
+        let key = filename.to_string_lossy().to_lowercase();
+        if let Some(matches) = self.by_name.get(&key) {
+            if let Some(path) = matches.first() {
+                return Ok(Some(path.clone()));
+            }
+        }
+
+        let Some(expected) = preferred_hash(known_hashes) else {
+            return Ok(None);
+        };
+        for path in &self.files {
+            let cache_key = (path.clone(), expected.algorithm);
+            let actual = if let Some(value) = self.hashes.get(&cache_key) {
+                value.clone()
+            } else {
+                let value = hash_file(path, expected.algorithm).await?;
+                self.hashes.insert(cache_key, value.clone());
+                value
+            };
+            if actual.eq_ignore_ascii_case(&expected.value) {
+                return Ok(Some(path.clone()));
+            }
+        }
+        Ok(None)
+    }
 }
 
 fn safe_filename(value: &str) -> AppResult<&std::ffi::OsStr> {
@@ -421,16 +544,19 @@ mod tests {
         }
     }
 
-    fn item(id: &str, filename: &str, side: ProjectSide) -> ModOrganizationItem {
-        ModOrganizationItem {
-            project: ProjectRef {
-                provider: ProviderId::Modrinth,
-                project_id: id.into(),
+    fn item(id: &str, filename: &str, side: ProjectSide) -> StoredOrganizationItem {
+        StoredOrganizationItem {
+            hashes: Vec::new(),
+            item: ModOrganizationItem {
+                project: ProjectRef {
+                    provider: ProviderId::Modrinth,
+                    project_id: id.into(),
+                },
+                name: id.into(),
+                filename: filename.into(),
+                side,
+                source: OrganizationClassificationSource::Provider,
             },
-            name: id.into(),
-            filename: filename.into(),
-            side,
-            source: OrganizationClassificationSource::Provider,
         }
     }
 
@@ -489,7 +615,7 @@ mod tests {
             .await
             .unwrap();
         let unknown = item("Unknown", "unknown.jar", ProjectSide::Unknown);
-        let assignments = HashMap::from([(unknown.project.key(), ProjectSide::Server)]);
+        let assignments = HashMap::from([(unknown.item.project.key(), ProjectSide::Server)]);
 
         let result = write_organized_export(&profile(&instance), &[unknown], &assignments, &output)
             .await
@@ -525,5 +651,82 @@ mod tests {
                 .await
                 .unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn recovers_a_registered_mod_from_a_subfolder_by_filename() {
+        let directory = tempfile::tempdir().unwrap();
+        let instance = directory.path().join("instance");
+        let mods = instance.join("mods");
+        let nested = mods.join("disabled");
+        let output = directory.path().join("output");
+        tokio::fs::create_dir_all(&nested).await.unwrap();
+        tokio::fs::create_dir(&output).await.unwrap();
+        tokio::fs::write(nested.join("client.jar"), b"client")
+            .await
+            .unwrap();
+
+        let result = write_organized_export(
+            &profile(&instance),
+            &[item("Client Mod", "client.jar", ProjectSide::Client)],
+            &HashMap::new(),
+            &output,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.copied_files, 1);
+        assert_eq!(result.skipped_files, 0);
+    }
+
+    #[tokio::test]
+    async fn recovers_a_renamed_mod_by_its_verified_hash() {
+        let directory = tempfile::tempdir().unwrap();
+        let instance = directory.path().join("instance");
+        let mods = instance.join("mods");
+        let output = directory.path().join("output");
+        tokio::fs::create_dir_all(&mods).await.unwrap();
+        tokio::fs::create_dir(&output).await.unwrap();
+        let renamed = mods.join("renamed.jar");
+        tokio::fs::write(&renamed, b"same mod bytes").await.unwrap();
+        let mut registered = item("Renamed Mod", "original.jar", ProjectSide::Both);
+        registered.hashes.push(FileHash {
+            algorithm: HashAlgorithm::Sha1,
+            value: hash_file(&renamed, HashAlgorithm::Sha1).await.unwrap(),
+        });
+
+        let result =
+            write_organized_export(&profile(&instance), &[registered], &HashMap::new(), &output)
+                .await
+                .unwrap();
+        let copied = PathBuf::from(&result.destination).join("Cliente e Servidor/original.jar");
+
+        assert_eq!(tokio::fs::read(copied).await.unwrap(), b"same mod bytes");
+        assert_eq!(result.skipped_files, 0);
+    }
+
+    #[tokio::test]
+    async fn skips_only_a_missing_registered_mod_and_finishes_the_export() {
+        let directory = tempfile::tempdir().unwrap();
+        let instance = directory.path().join("instance");
+        let mods = instance.join("mods");
+        let output = directory.path().join("output");
+        tokio::fs::create_dir_all(&mods).await.unwrap();
+        tokio::fs::create_dir(&output).await.unwrap();
+        tokio::fs::write(mods.join("present.jar"), b"present")
+            .await
+            .unwrap();
+        let items = [
+            item("Present", "present.jar", ProjectSide::Both),
+            item("Missing", "missing.jar", ProjectSide::Client),
+        ];
+
+        let result = write_organized_export(&profile(&instance), &items, &HashMap::new(), &output)
+            .await
+            .unwrap();
+
+        assert_eq!(result.copied_files, 1);
+        assert_eq!(result.skipped_files, 1);
+        assert!(result.warnings[0].contains("Missing"));
     }
 }

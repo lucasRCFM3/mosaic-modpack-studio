@@ -1,20 +1,20 @@
 use crate::{
-    application::profiles::ProfileService,
+    application::{
+        file_integrity::{HashState, hash_matches, preferred_hash},
+        profiles::ProfileService,
+    },
     domain::*,
     error::{AppError, AppResult},
 };
 use chrono::Utc;
 use futures_util::{StreamExt, stream};
-use md5::Md5;
-use sha1::Sha1;
-use sha2::{Digest, Sha512};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
 use tauri::{AppHandle, Emitter};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
 pub struct DownloadManager {
     profiles: Arc<ProfileService>,
@@ -26,36 +26,6 @@ enum NodeOutcome {
     Skipped,
     Failed(InstallFailure),
 }
-enum HashState {
-    Sha512(Sha512),
-    Sha1(Sha1),
-    Md5(Md5),
-}
-
-impl HashState {
-    fn new(algorithm: HashAlgorithm) -> Self {
-        match algorithm {
-            HashAlgorithm::Sha512 => Self::Sha512(Sha512::new()),
-            HashAlgorithm::Sha1 => Self::Sha1(Sha1::new()),
-            HashAlgorithm::Md5 => Self::Md5(Md5::new()),
-        }
-    }
-    fn update(&mut self, bytes: &[u8]) {
-        match self {
-            Self::Sha512(hash) => hash.update(bytes),
-            Self::Sha1(hash) => hash.update(bytes),
-            Self::Md5(hash) => hash.update(bytes),
-        }
-    }
-    fn finish(self) -> String {
-        match self {
-            Self::Sha512(hash) => hex::encode(hash.finalize()),
-            Self::Sha1(hash) => hex::encode(hash.finalize()),
-            Self::Md5(hash) => hex::encode(hash.finalize()),
-        }
-    }
-}
-
 impl DownloadManager {
     pub fn new(profiles: Arc<ProfileService>) -> AppResult<Self> {
         Ok(Self {
@@ -396,30 +366,6 @@ fn primary_file(version: &ProjectVersion) -> Option<&DownloadFile> {
         .iter()
         .find(|file| file.primary)
         .or_else(|| version.files.first())
-}
-fn preferred_hash(hashes: &[FileHash]) -> Option<&FileHash> {
-    hashes
-        .iter()
-        .find(|hash| matches!(hash.algorithm, HashAlgorithm::Sha512))
-        .or_else(|| {
-            hashes
-                .iter()
-                .find(|hash| matches!(hash.algorithm, HashAlgorithm::Sha1))
-        })
-        .or_else(|| hashes.first())
-}
-async fn hash_matches(path: &Path, expected: &FileHash) -> AppResult<bool> {
-    let mut file = tokio::fs::File::open(path).await?;
-    let mut buffer = vec![0u8; 64 * 1024];
-    let mut hash = HashState::new(expected.algorithm);
-    loop {
-        let size = file.read(&mut buffer).await?;
-        if size == 0 {
-            break;
-        }
-        hash.update(&buffer[..size]);
-    }
-    Ok(hash.finish().eq_ignore_ascii_case(&expected.value))
 }
 fn safe_filename(value: &str) -> AppResult<String> {
     let name = Path::new(value)

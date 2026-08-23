@@ -145,7 +145,7 @@ pub struct FileHash {
     pub value: String,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum HashAlgorithm {
     Sha1,
@@ -476,6 +476,8 @@ pub struct ModOrganizationResult {
     pub server: usize,
     pub both: usize,
     pub unknown: usize,
+    pub skipped_files: usize,
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

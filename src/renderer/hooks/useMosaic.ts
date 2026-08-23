@@ -318,7 +318,10 @@ export function useMosaic() {
       if (!result) return false;
       setOrganizationPlan(undefined);
       const unknown = result.unknown ? ` ${result.unknown} ficaram em “Não classificados”.` : '';
-      setNotice({ tone: result.unknown ? 'info' : 'success', text: `${result.copiedFiles} mods organizados em Cliente, Servidor e Cliente e Servidor.${unknown} Pasta: ${result.destination}` });
+      const skipped = result.skippedFiles
+        ? ` ${result.skippedFiles} não foram copiados porque o JAR não está mais na pasta de mods: ${result.warnings.join(' ')}`
+        : '';
+      setNotice({ tone: result.unknown || result.skippedFiles ? 'info' : 'success', text: `${result.copiedFiles} mods organizados em Cliente, Servidor e Cliente e Servidor.${unknown}${skipped} Pasta: ${result.destination}` });
       return true;
     } finally {
       setOrganizingMods(false);

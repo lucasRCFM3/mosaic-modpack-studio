@@ -242,6 +242,8 @@ export interface ModOrganizationResult {
   server: number;
   both: number;
   unknown: number;
+  skippedFiles: number;
+  warnings: string[];
 }
 
 export interface UpdateProfileInput {
