@@ -19,8 +19,10 @@ Aplicativo desktop local-first, construído com **Rust + Tauri 2 + React**, para
 - detecção de ciclos, incompatibilidades, versões ausentes e distribuição bloqueada;
 - revisão do plano antes de qualquer escrita em disco;
 - fila de instalação persistente por perfil para selecionar vários mods durante a busca e resolver todo o lote de uma vez;
+- pesquisa por nome, autor, origem ou categoria dentro da fila de instalação;
 - downloads concorrentes por HTTPS, arquivo `.part`, verificação de hash e renomeação;
 - perfis independentes com nome e descrição editáveis, registro dos mods e lockfile JSON exportável;
+- remoção conservadora que preserva qualquer dependência ainda referenciada por outro mod instalado;
 - predefinições reutilizáveis que verificam versões compatíveis e resolvem todas as dependências em lote;
 - chave da CurseForge guardada no cofre de credenciais do sistema operacional;
 - frontend sem acesso direto ao sistema de arquivos ou aos segredos;

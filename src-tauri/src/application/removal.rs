@@ -1,5 +1,7 @@
 use crate::{
-    application::profiles::ProfileService,
+    application::{
+        dependency_reconciliation::reconcile_required_dependencies, profiles::ProfileService,
+    },
     domain::*,
     error::{AppError, AppResult},
     providers::ProviderRegistry,
@@ -41,10 +43,22 @@ impl DependencyRemovalService {
             ));
         }
 
-        let graph = self.load_graph(&profile).await?;
+        let graph_snapshot = self.load_graph(&profile).await?;
         let unmanaged_mod_files = count_unmanaged_mod_files(&profile).await?;
-        let mut decision = plan_removal(&profile.mods, &graph, &target_key)?;
-        if unmanaged_mod_files > 0 {
+        let mut decision = plan_removal(&profile.mods, &graph_snapshot.graph, &target_key)?;
+        if graph_snapshot.verification_failures > 0 {
+            let target_reason = profile
+                .mods
+                .iter()
+                .find(|item| item.as_ref().key() == target_key)
+                .map(|item| item.reason);
+            if !matches!(target_reason, Some(InstallReason::Requested)) {
+                return Err(AppError::Message(
+                    "Não foi possível verificar o grafo completo. Por segurança, este mod não foi removido porque pode ser dependência de outro conteúdo.".into(),
+                ));
+            }
+        }
+        if unmanaged_mod_files > 0 || graph_snapshot.verification_failures > 0 {
             let dependencies: Vec<_> = decision
                 .remove
                 .iter()
@@ -60,7 +74,12 @@ impl DependencyRemovalService {
         let retained_shared = mods_for_keys(&profile.mods, &decision.retained);
         let updated = self
             .profiles
-            .remove_mods(profile_id, &decision.remove, &profile.updated_at, &graph)
+            .remove_mods(
+                profile_id,
+                &decision.remove,
+                &profile.updated_at,
+                &graph_snapshot.graph,
+            )
             .await?;
 
         Ok(RemoveModResult {
@@ -68,26 +87,21 @@ impl DependencyRemovalService {
             removed,
             retained_shared,
             unmanaged_mod_files,
+            dependency_verification_failures: graph_snapshot.verification_failures,
         })
     }
 
-    async fn load_graph(
-        &self,
-        profile: &ModpackProfile,
-    ) -> AppResult<HashMap<String, Vec<ProjectRef>>> {
+    async fn load_graph(&self, profile: &ModpackProfile) -> AppResult<DependencyGraphSnapshot> {
         let mut graph = HashMap::new();
-        let mut legacy = Vec::new();
         for item in &profile.mods {
             if let Some(dependencies) = &item.required_dependencies {
                 graph.insert(item.as_ref().key(), dependencies.clone());
-            } else {
-                legacy.push(item.clone());
             }
         }
 
         let providers = self.providers.clone();
         let target = profile.target.clone();
-        let resolved: Vec<_> = stream::iter(legacy)
+        let resolved: Vec<_> = stream::iter(profile.mods.clone())
             .map(|item| {
                 let providers = providers.clone();
                 let target = target.clone();
@@ -101,16 +115,30 @@ impl DependencyRemovalService {
             .collect()
             .await;
 
-        for (name, key, result) in resolved {
-            let dependencies = result.map_err(|error| {
-                AppError::Message(format!(
-                    "Não foi possível verificar as dependências de {name}. Nada foi removido: {error}"
-                ))
-            })?;
-            graph.insert(key, dependencies);
+        let mut verification_failures = 0;
+        for (_name, key, result) in resolved {
+            match result {
+                Ok(dependencies) => {
+                    let stored = graph.entry(key).or_default();
+                    for dependency in dependencies {
+                        if !stored.contains(&dependency) {
+                            stored.push(dependency);
+                        }
+                    }
+                }
+                Err(_) => verification_failures += 1,
+            }
         }
-        Ok(graph)
+        Ok(DependencyGraphSnapshot {
+            graph,
+            verification_failures,
+        })
     }
+}
+
+struct DependencyGraphSnapshot {
+    graph: HashMap<String, Vec<ProjectRef>>,
+    verification_failures: usize,
 }
 
 async fn count_unmanaged_mod_files(profile: &ModpackProfile) -> AppResult<usize> {
@@ -143,8 +171,9 @@ async fn direct_required_dependencies(
     target: &ProfileTarget,
     item: &InstalledMod,
 ) -> AppResult<Vec<ProjectRef>> {
-    let version = providers
-        .get(item.provider)
+    let provider = providers.get(item.provider);
+    let project = provider.get_project(&item.project_id).await?;
+    let mut version = provider
         .get_compatible_version(&item.project_id, target, Some(&item.version_id))
         .await?
         .ok_or_else(|| {
@@ -153,6 +182,11 @@ async fn direct_required_dependencies(
                 item.version_number
             ))
         })?;
+    if let Some(reconciled) =
+        reconcile_required_dependencies(providers, &project, &version, target).await
+    {
+        version.dependencies = reconciled.dependencies;
+    }
     let mut dependencies = Vec::new();
     for dependency in version
         .dependencies
@@ -200,13 +234,11 @@ fn plan_removal(
 ) -> AppResult<RemovalDecision> {
     let installed: HashSet<_> = mods.iter().map(|item| item.as_ref().key()).collect();
     let target_closure = reachable([target.to_string()], graph, &installed);
-    let remaining_roots = mods
+    let all_other_mods = installed
         .iter()
-        .filter(|item| item.as_ref().key() != target)
-        .filter(|item| !matches!(item.reason, InstallReason::Required))
-        .map(|item| item.as_ref().key());
-    let needed = reachable(remaining_roots, graph, &installed);
-    if needed.contains(target) {
+        .filter(|key| key.as_str() != target)
+        .cloned();
+    if reachable(all_other_mods, graph, &installed).contains(target) {
         return Err(AppError::Message(
             "Este mod ainda é uma dependência obrigatória de outro conteúdo instalado. Remova primeiro o mod que depende dele.".into(),
         ));
@@ -217,14 +249,32 @@ fn plan_removal(
         .map(|item| (item.as_ref().key(), item.reason))
         .collect();
     let mut remove = HashSet::from([target.to_string()]);
-    let mut retained = HashSet::new();
-    for key in target_closure.into_iter().filter(|key| key != target) {
-        if needed.contains(&key) || !matches!(reasons.get(&key), Some(InstallReason::Required)) {
-            retained.insert(key);
-        } else {
-            remove.insert(key);
+    loop {
+        let mut changed = false;
+        for key in target_closure.iter().filter(|key| key.as_str() != target) {
+            if remove.contains(key) || !matches!(reasons.get(key), Some(InstallReason::Required)) {
+                continue;
+            }
+            let still_referenced = graph.iter().any(|(owner, dependencies)| {
+                installed.contains(owner)
+                    && !remove.contains(owner)
+                    && dependencies
+                        .iter()
+                        .any(|dependency| dependency.key() == *key)
+            });
+            if !still_referenced {
+                remove.insert(key.clone());
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
         }
     }
+    let retained = target_closure
+        .into_iter()
+        .filter(|key| key != target && !remove.contains(key))
+        .collect();
     Ok(RemovalDecision { remove, retained })
 }
 
@@ -313,6 +363,24 @@ mod tests {
         let decision = plan_removal(&mods, &graph, &project("first").key()).unwrap();
 
         assert_eq!(decision.remove, HashSet::from([project("first").key()]));
+        assert_eq!(decision.retained, HashSet::from([project("library").key()]));
+    }
+
+    #[test]
+    fn preserves_a_dependency_used_by_any_remaining_mod_regardless_of_reason() {
+        let mods = vec![
+            installed("root", InstallReason::Requested),
+            installed("other-component", InstallReason::Required),
+            installed("library", InstallReason::Required),
+        ];
+        let graph = HashMap::from([
+            (project("root").key(), vec![project("library")]),
+            (project("other-component").key(), vec![project("library")]),
+        ]);
+
+        let decision = plan_removal(&mods, &graph, &project("root").key()).unwrap();
+
+        assert_eq!(decision.remove, HashSet::from([project("root").key()]));
         assert_eq!(decision.retained, HashSet::from([project("library").key()]));
     }
 

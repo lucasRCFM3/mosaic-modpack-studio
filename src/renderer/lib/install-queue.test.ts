@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ProjectSummary } from '../../shared/domain';
-import { addProjectToQueue, loadInstallQueues, removeProjectFromQueue, removeProjectsFromQueue } from './install-queue';
+import { addProjectToQueue, filterInstallQueue, loadInstallQueues, removeProjectFromQueue, removeProjectsFromQueue } from './install-queue';
 
 const project = (id: string) => ({ provider: 'modrinth', projectId: id, name: id }) as ProjectSummary;
 
@@ -20,5 +20,14 @@ describe('fila de instalação', () => {
     expect(loadInstallQueues('{invalid')).toEqual({});
     expect(loadInstallQueues('[]')).toEqual({});
     expect(loadInstallQueues(JSON.stringify({ profile: [null, {}, project('sodium')] }))).toEqual({ profile: [project('sodium')] });
+  });
+
+  it('pesquisa a lista sem diferenciar acentos ou maiúsculas', () => {
+    const queue = [
+      { ...project('terrain'), name: 'Geração de Terreno', author: 'Lucas', slug: 'terrain', categories: ['worldgen'] },
+      { ...project('sodium'), name: 'Sodium', author: 'CaffeineMC', slug: 'sodium', categories: ['optimization'] },
+    ];
+    expect(filterInstallQueue(queue, 'geracao')).toEqual([queue[0]]);
+    expect(filterInstallQueue(queue, 'CAFFEINE')).toEqual([queue[1]]);
   });
 });

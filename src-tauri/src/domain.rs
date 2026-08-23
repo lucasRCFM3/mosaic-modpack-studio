@@ -398,6 +398,7 @@ pub struct RemoveModResult {
     pub removed: Vec<InstalledMod>,
     pub retained_shared: Vec<InstalledMod>,
     pub unmanaged_mod_files: usize,
+    pub dependency_verification_failures: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

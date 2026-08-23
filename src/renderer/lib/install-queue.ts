@@ -27,6 +27,24 @@ export function removeProjectsFromQueue(queue: ProjectSummary[], projects: Proje
   return queue.filter((item) => !keys.has(projectKey(item)));
 }
 
+export function filterInstallQueue(queue: ProjectSummary[], query: string): ProjectSummary[] {
+  const needle = normalizeSearch(query);
+  if (!needle) return queue;
+  return queue.filter((project) => normalizeSearch([
+    project.name,
+    project.author,
+    project.slug,
+    project.provider,
+    ...project.categories,
+  ].join(' ')).includes(needle));
+}
+
+const normalizeSearch = (value: string): string => value
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLocaleLowerCase('pt-BR')
+  .trim();
+
 export function loadInstallQueues(raw: string | null): Record<string, ProjectSummary[]> {
   if (!raw) return {};
   try {

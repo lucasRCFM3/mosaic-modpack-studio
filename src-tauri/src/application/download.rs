@@ -363,16 +363,26 @@ fn install_graph(plan: &ResolutionPlan) -> HashMap<String, (InstallReason, Vec<P
     let mut graph: HashMap<String, (InstallReason, Vec<ProjectRef>)> = plan
         .nodes
         .iter()
-        .map(|node| (node.key.clone(), (node.reason, Vec::new())))
+        .map(|node| {
+            (
+                ProjectRef {
+                    provider: node.project.provider,
+                    project_id: node.project.project_id.clone(),
+                }
+                .key(),
+                (node.reason, Vec::new()),
+            )
+        })
         .collect();
     for edge in &plan.edges {
         if !matches!(edge.dependency_type, DependencyType::Required) {
             continue;
         }
-        let Some(project) = projects.get(&edge.to) else {
+        let (Some(owner), Some(project)) = (projects.get(&edge.from), projects.get(&edge.to))
+        else {
             continue;
         };
-        if let Some((_, dependencies)) = graph.get_mut(&edge.from) {
+        if let Some((_, dependencies)) = graph.get_mut(&owner.key()) {
             if !dependencies.contains(project) {
                 dependencies.push(project.clone());
             }
@@ -490,5 +500,95 @@ async fn remove_registered_file(root: &Path, filename: &str) -> AppResult<()> {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(key: &str, id: &str, reason: InstallReason) -> ResolutionNode {
+        ResolutionNode {
+            key: key.into(),
+            project: ProjectSummary {
+                provider: ProviderId::Modrinth,
+                project_id: id.into(),
+                slug: id.into(),
+                name: id.into(),
+                summary: String::new(),
+                author: String::new(),
+                icon_url: None,
+                website_url: String::new(),
+                downloads: 0,
+                updated_at: String::new(),
+                categories: Vec::new(),
+                supported_versions: Vec::new(),
+                supported_loaders: Vec::new(),
+                side: ProjectSide::Unknown,
+                featured: None,
+            },
+            version: ProjectVersion {
+                provider: ProviderId::Modrinth,
+                project_id: id.into(),
+                version_id: format!("{id}-version"),
+                name: String::new(),
+                version_number: "1".into(),
+                minecraft_versions: vec!["1.20.1".into()],
+                loaders: vec![ModLoader::Forge],
+                channel: ReleaseChannel::Release,
+                published_at: String::new(),
+                downloads: 0,
+                files: Vec::new(),
+                dependencies: Vec::new(),
+            },
+            reason,
+            parent_key: None,
+            already_installed: false,
+        }
+    }
+
+    #[test]
+    fn graph_uses_the_actual_provider_keys_after_a_fallback() {
+        let plan = ResolutionPlan {
+            id: "plan".into(),
+            target: ProfileTarget {
+                minecraft_version: "1.20.1".into(),
+                loader: ModLoader::Forge,
+                release_channels: vec![ReleaseChannel::Release],
+            },
+            nodes: vec![
+                node(
+                    "curseforge:original-root",
+                    "actual-root",
+                    InstallReason::Requested,
+                ),
+                node(
+                    "curseforge:original-library",
+                    "actual-library",
+                    InstallReason::Required,
+                ),
+            ],
+            edges: vec![ResolutionEdge {
+                from: "curseforge:original-root".into(),
+                to: "curseforge:original-library".into(),
+                dependency_type: DependencyType::Required,
+            }],
+            issues: Vec::new(),
+            optional_dependencies: Vec::new(),
+            manual_downloads: Vec::new(),
+            downloadable_bytes: 0,
+            can_install: true,
+        };
+
+        let graph = install_graph(&plan);
+
+        assert!(!graph.contains_key("curseforge:original-root"));
+        assert_eq!(
+            graph["modrinth:actual-root"].1,
+            vec![ProjectRef {
+                provider: ProviderId::Modrinth,
+                project_id: "actual-library".into(),
+            }]
+        );
     }
 }

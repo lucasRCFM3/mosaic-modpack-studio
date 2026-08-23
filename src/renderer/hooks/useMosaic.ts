@@ -256,7 +256,8 @@ export function useMosaic() {
       const removedText = orphaned ? ` e ${orphaned} dependência${orphaned === 1 ? '' : 's'} órfã${orphaned === 1 ? '' : 's'}` : '';
       const keptText = kept ? ` ${kept} dependência${kept === 1 ? '' : 's'} ainda necessária${kept === 1 ? ' foi preservada' : 's foram preservadas'}.` : '';
       const unmanagedText = result.unmanagedModFiles ? ` A limpeza automática foi limitada porque há ${result.unmanagedModFiles} mod${result.unmanagedModFiles === 1 ? '' : 's'} não gerenciado${result.unmanagedModFiles === 1 ? '' : 's'} na pasta.` : '';
-      setNotice({ tone: 'info', text: `Mod${removedText} removido${orphaned > 0 ? 's' : ''}.${keptText}${unmanagedText}` });
+      const verificationText = result.dependencyVerificationFailures ? ` A limpeza automática também foi desativada porque ${result.dependencyVerificationFailures === 1 ? '1 registro de dependência não pôde ser verificado' : `${result.dependencyVerificationFailures} registros de dependência não puderam ser verificados`} com segurança.` : '';
+      setNotice({ tone: 'info', text: `Mod${removedText} removido${orphaned > 0 ? 's' : ''}.${keptText}${unmanagedText}${verificationText}` });
     } catch (error) {
       setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível remover o mod com segurança.' });
     }

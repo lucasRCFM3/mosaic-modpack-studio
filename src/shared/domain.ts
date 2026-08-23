@@ -182,6 +182,7 @@ export interface RemoveModResult {
   removed: InstalledMod[];
   retainedShared: InstalledMod[];
   unmanagedModFiles: number;
+  dependencyVerificationFailures: number;
 }
 
 export interface InstallResult {
