@@ -51,7 +51,8 @@ struct ScannedJar {
 
 struct IdentifiedJar {
     item: InstalledMod,
-    version: Option<ProjectVersion>,
+    versions: Vec<ProjectVersion>,
+    aliases: Vec<ProjectRef>,
     warnings: Vec<String>,
     target_hint: JarTargetHint,
 }
@@ -108,21 +109,22 @@ impl ProfileRescanService {
         }
         for item in &identified {
             warnings.extend(item.warnings.clone());
-            if let Some(version) = &item.version {
-                let wrong_version = !version.minecraft_versions.is_empty()
-                    && !version
-                        .minecraft_versions
-                        .contains(&detected_target.minecraft_version);
-                let wrong_loader = !version.loaders.is_empty()
-                    && !version.loaders.contains(&detected_target.loader);
-                if wrong_version || wrong_loader {
-                    warnings.push(format!(
-                        "{} foi identificado, mas não declara compatibilidade com Minecraft {} / {}.",
-                        item.item.filename,
-                        detected_target.minecraft_version,
-                        detected_target.loader.as_str()
-                    ));
-                }
+            if !item.versions.is_empty()
+                && !item.versions.iter().any(|version| {
+                    (version.minecraft_versions.is_empty()
+                        || version
+                            .minecraft_versions
+                            .contains(&detected_target.minecraft_version))
+                        && (version.loaders.is_empty()
+                            || version.loaders.contains(&detected_target.loader))
+                })
+            {
+                warnings.push(format!(
+                    "{} foi identificado, mas não declara compatibilidade com Minecraft {} / {}.",
+                    item.item.filename,
+                    detected_target.minecraft_version,
+                    detected_target.loader.as_str()
+                ));
             }
         }
 
@@ -317,6 +319,7 @@ async fn scan_mods_folder(mods_path: &Path) -> AppResult<Vec<ScannedJar>> {
 async fn identify_jar(providers: &ProviderRegistry, jar: ScannedJar) -> AppResult<IdentifiedJar> {
     let mut warnings = Vec::new();
     let target_hint = jar.target_hint.clone();
+    let mut matches = Vec::new();
     for provider_id in [ProviderId::Modrinth, ProviderId::Curseforge] {
         let provider = providers.get(provider_id);
         if !provider.is_enabled() {
@@ -349,10 +352,13 @@ async fn identify_jar(providers: &ProviderRegistry, jar: ScannedJar) -> AppResul
                 }
             }
         }
-        let Some(version) = version else {
-            continue;
-        };
-        let project = match provider.get_project(&version.project_id).await {
+        if let Some(version) = version {
+            matches.push((provider_id, version));
+        }
+    }
+    for (provider_id, selected_version) in &matches {
+        let provider = providers.get(*provider_id);
+        let project = match provider.get_project(&selected_version.project_id).await {
             Ok(project) => project,
             Err(error) => {
                 warnings.push(format!(
@@ -364,30 +370,41 @@ async fn identify_jar(providers: &ProviderRegistry, jar: ScannedJar) -> AppResul
                 continue;
             }
         };
-        let item = installed_from_version(project, &version, jar);
+        let versions: Vec<_> = matches.iter().map(|(_, version)| version.clone()).collect();
+        let aliases = versions
+            .iter()
+            .map(|version| ProjectRef {
+                provider: version.provider,
+                project_id: version.project_id.clone(),
+            })
+            .collect();
+        let item = installed_from_versions(project, selected_version, &versions, jar);
         return Ok(IdentifiedJar {
             item,
-            version: Some(version),
+            versions,
+            aliases,
             warnings,
             target_hint,
         });
     }
     Ok(IdentifiedJar {
         item: local_installed_mod(jar),
-        version: None,
+        versions: Vec::new(),
+        aliases: Vec::new(),
         warnings,
         target_hint,
     })
 }
 
-fn installed_from_version(
+fn installed_from_versions(
     project: ProjectSummary,
-    version: &ProjectVersion,
+    selected_version: &ProjectVersion,
+    versions: &[ProjectVersion],
     jar: ScannedJar,
 ) -> InstalledMod {
-    let required_dependencies = version
-        .dependencies
+    let mut required_dependencies: Vec<_> = versions
         .iter()
+        .flat_map(|version| &version.dependencies)
         .filter(|dependency| matches!(dependency.dependency_type, DependencyType::Required))
         .filter_map(|dependency| {
             Some(ProjectRef {
@@ -396,12 +413,14 @@ fn installed_from_version(
             })
         })
         .collect();
+    required_dependencies.sort_by_key(ProjectRef::key);
+    required_dependencies.dedup_by(|left, right| left.key() == right.key());
     InstalledMod {
         provider: project.provider,
         project_id: project.project_id,
         name: project.name,
-        version_id: version.version_id.clone(),
-        version_number: version.version_number.clone(),
+        version_id: selected_version.version_id.clone(),
+        version_number: selected_version.version_number.clone(),
         filename: jar.filename,
         installed_at: Utc::now().to_rfc3339(),
         reason: InstallReason::Requested,
@@ -437,18 +456,48 @@ fn build_mod_index(
     identified: &mut Vec<IdentifiedJar>,
     warnings: &mut Vec<String>,
 ) -> (Vec<InstalledMod>, usize, usize) {
-    let mut seen = HashSet::new();
-    let mut mods = Vec::new();
-    for identified in identified.drain(..) {
-        let key = identified.item.as_ref().key();
-        if !seen.insert(key) {
+    let mut seen_aliases = HashSet::new();
+    let mut retained = Vec::new();
+    for mut identified in identified.drain(..) {
+        if identified.aliases.is_empty() {
+            identified.aliases.push(identified.item.as_ref());
+        }
+        if identified
+            .aliases
+            .iter()
+            .map(ProjectRef::key)
+            .any(|key| seen_aliases.contains(&key))
+        {
             warnings.push(format!(
                 "{} foi ignorado porque outro arquivo do mesmo projeto já foi registrado.",
                 identified.item.filename
             ));
             continue;
         }
-        mods.push(identified.item);
+        for alias in &identified.aliases {
+            seen_aliases.insert(alias.key());
+        }
+        retained.push((identified.item, identified.aliases));
+    }
+    let mut canonical_refs = HashMap::new();
+    for (item, aliases) in &retained {
+        let canonical = item.as_ref();
+        canonical_refs.insert(canonical.key(), canonical.clone());
+        for alias in aliases {
+            canonical_refs.insert(alias.key(), canonical.clone());
+        }
+    }
+    let mut mods: Vec<_> = retained.into_iter().map(|(item, _)| item).collect();
+    for item in &mut mods {
+        if let Some(dependencies) = &mut item.required_dependencies {
+            for dependency in dependencies.iter_mut() {
+                if let Some(canonical) = canonical_refs.get(&dependency.key()) {
+                    *dependency = canonical.clone();
+                }
+            }
+            dependencies.sort_by_key(ProjectRef::key);
+            dependencies.dedup_by(|left, right| left.key() == right.key());
+        }
     }
     let installed_keys: HashSet<_> = mods.iter().map(|item| item.as_ref().key()).collect();
     let dependency_keys: HashSet<_> = mods
@@ -649,7 +698,7 @@ fn detect_target(
     let mut version_counts: HashMap<String, usize> = HashMap::new();
     let mut loader_counts: HashMap<ModLoader, usize> = HashMap::new();
     let mut has_provider_metadata = false;
-    for version in identified.iter().filter_map(|item| item.version.as_ref()) {
+    for version in identified.iter().flat_map(|item| &item.versions) {
         has_provider_metadata = true;
         for loader in &version.loaders {
             if !configured
@@ -968,11 +1017,12 @@ fn display_name_from_filename(filename: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        compare_minecraft_versions, detect_instance_target, display_name_from_filename,
-        inspect_jar_target_sync, loader_from_text, minecraft_versions_from_mods_toml,
-        resolve_instance_path, snapshot_mods_folder,
+        IdentifiedJar, JarTargetHint, build_mod_index, compare_minecraft_versions,
+        detect_instance_target, display_name_from_filename, inspect_jar_target_sync,
+        loader_from_text, minecraft_versions_from_mods_toml, resolve_instance_path,
+        snapshot_mods_folder,
     };
-    use crate::domain::ModLoader;
+    use crate::domain::{FileHash, InstallReason, InstalledMod, ModLoader, ProjectRef, ProviderId};
     use std::{cmp::Ordering, io::Write};
 
     #[test]
@@ -1035,6 +1085,56 @@ mod tests {
             "#,
         );
         assert_eq!(versions, vec!["1.20.1"]);
+    }
+
+    #[test]
+    fn canonicalizes_cross_provider_dependencies_during_import() {
+        let root = installed(
+            ProviderId::Modrinth,
+            "root",
+            vec![ProjectRef {
+                provider: ProviderId::Curseforge,
+                project_id: "library-cf".into(),
+            }],
+        );
+        let library = installed(ProviderId::Modrinth, "library-mr", Vec::new());
+        let mut identified = vec![
+            IdentifiedJar {
+                item: root,
+                versions: Vec::new(),
+                aliases: Vec::new(),
+                warnings: Vec::new(),
+                target_hint: JarTargetHint::default(),
+            },
+            IdentifiedJar {
+                item: library,
+                versions: Vec::new(),
+                aliases: vec![
+                    ProjectRef {
+                        provider: ProviderId::Modrinth,
+                        project_id: "library-mr".into(),
+                    },
+                    ProjectRef {
+                        provider: ProviderId::Curseforge,
+                        project_id: "library-cf".into(),
+                    },
+                ],
+                warnings: Vec::new(),
+                target_hint: JarTargetHint::default(),
+            },
+        ];
+        let mut warnings = Vec::new();
+        let (mods, _, _) = build_mod_index(&mut identified, &mut warnings);
+
+        let root = mods.iter().find(|item| item.project_id == "root").unwrap();
+        let dependency = &root.required_dependencies.as_ref().unwrap()[0];
+        assert_eq!(dependency.provider, ProviderId::Modrinth);
+        assert_eq!(dependency.project_id, "library-mr");
+        let library = mods
+            .iter()
+            .find(|item| item.project_id == "library-mr")
+            .unwrap();
+        assert!(matches!(library.reason, InstallReason::Required));
     }
 
     #[tokio::test]
@@ -1103,5 +1203,25 @@ mod tests {
         let after = snapshot_mods_folder(&mods).await.unwrap();
 
         assert_ne!(before[0].sha1, after[0].sha1);
+    }
+
+    fn installed(
+        provider: ProviderId,
+        project_id: &str,
+        dependencies: Vec<ProjectRef>,
+    ) -> InstalledMod {
+        InstalledMod {
+            provider,
+            project_id: project_id.into(),
+            name: project_id.into(),
+            version_id: "version".into(),
+            version_number: "1".into(),
+            filename: format!("{project_id}.jar"),
+            installed_at: "now".into(),
+            reason: InstallReason::Requested,
+            hashes: Vec::<FileHash>::new(),
+            enabled: true,
+            required_dependencies: Some(dependencies),
+        }
     }
 }
