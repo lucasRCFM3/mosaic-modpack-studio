@@ -405,7 +405,7 @@ impl ProfileService {
         }
         let lockfile = Lockfile {
             format_version: 1,
-            generated_by: "Mosaic Modpack Studio 0.12.0",
+            generated_by: "Mosaic Modpack Studio 0.13.0",
             generated_at: Utc::now().to_rfc3339(),
             profile: self.get(id).await?,
         };
@@ -673,11 +673,24 @@ fn safe_folder_name(value: &str) -> String {
 }
 
 fn render_mod_list(mods: &[InstalledMod]) -> String {
+    let dependency_users = dependency_root_users(mods);
     let mut entries: Vec<_> = mods
         .iter()
         .map(|item| {
-            let name = item.name.split_whitespace().collect::<Vec<_>>().join(" ");
-            format!("{} ({name})", item.filename)
+            let name = normalized_mod_name(item);
+            let users = dependency_users
+                .get(&item.as_ref().key())
+                .filter(|users| !users.is_empty())
+                .map(|users| {
+                    let names = users
+                        .iter()
+                        .map(|user| normalized_mod_name(user))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!(" (DEPENDÊNCIA DE: {names})")
+                })
+                .unwrap_or_default();
+            format!("{} ({name}){users}", item.filename)
         })
         .collect();
     entries.sort_by_key(|entry| entry.to_lowercase());
@@ -686,6 +699,70 @@ fn render_mod_list(mods: &[InstalledMod]) -> String {
     } else {
         format!("{}\r\n", entries.join("\r\n"))
     }
+}
+
+fn dependency_root_users<'a>(mods: &'a [InstalledMod]) -> HashMap<String, Vec<&'a InstalledMod>> {
+    let installed_by_key: HashMap<_, _> = mods
+        .iter()
+        .map(|item| (item.as_ref().key(), item))
+        .collect();
+    let mut direct_by_dependency: HashMap<String, Vec<&InstalledMod>> = HashMap::new();
+    for owner in mods {
+        for dependency in owner.required_dependencies.iter().flatten() {
+            let key = dependency.key();
+            if !installed_by_key.contains_key(&key) {
+                continue;
+            }
+            let dependents = direct_by_dependency.entry(key).or_default();
+            if !dependents
+                .iter()
+                .any(|current| current.as_ref().key() == owner.as_ref().key())
+            {
+                dependents.push(owner);
+            }
+        }
+    }
+
+    mods.iter()
+        .map(|item| {
+            let item_key = item.as_ref().key();
+            let direct = direct_by_dependency
+                .get(&item_key)
+                .cloned()
+                .unwrap_or_default();
+            let mut reached = HashMap::new();
+            let mut pending = direct.clone();
+            while let Some(dependent) = pending.pop() {
+                let key = dependent.as_ref().key();
+                if key == item_key || reached.contains_key(&key) {
+                    continue;
+                }
+                reached.insert(key.clone(), dependent);
+                if let Some(parents) = direct_by_dependency.get(&key) {
+                    pending.extend(parents.iter().copied());
+                }
+            }
+            let mut roots: Vec<_> = reached
+                .into_values()
+                .filter(|dependent| !matches!(dependent.reason, InstallReason::Required))
+                .collect();
+            if roots.is_empty() {
+                roots = direct;
+            }
+            roots.sort_by_key(|item| {
+                (
+                    normalized_mod_name(item).to_lowercase(),
+                    item.as_ref().key(),
+                )
+            });
+            roots.dedup_by(|left, right| left.as_ref().key() == right.as_ref().key());
+            (item_key, roots)
+        })
+        .collect()
+}
+
+fn normalized_mod_name(item: &InstalledMod) -> String {
+    item.name.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]
@@ -697,7 +774,7 @@ mod tests {
     use crate::{
         domain::{
             CreateProfileInput, DuplicateProfileInput, DuplicateProfileMode, InstallReason,
-            InstalledMod, ModLoader, ProfileTarget, ProviderId, ReleaseChannel,
+            InstalledMod, ModLoader, ProfileTarget, ProjectRef, ProviderId, ReleaseChannel,
         },
         infrastructure::store::JsonStore,
     };
@@ -734,6 +811,74 @@ mod tests {
             render_mod_list(&mods),
             "JEI12021.23-forge.jar (Just Enough Items)\r\nsodium.jar (Sodium)\r\n"
         );
+    }
+
+    #[test]
+    fn annotates_shared_and_transitive_dependencies_in_the_mod_list() {
+        let entry = |project_id: &str, name: &str, reason: InstallReason, dependencies: &[&str]| {
+            InstalledMod {
+                provider: ProviderId::Modrinth,
+                project_id: project_id.into(),
+                name: name.into(),
+                version_id: "version".into(),
+                version_number: "1".into(),
+                filename: format!("{project_id}.jar"),
+                installed_at: String::new(),
+                reason,
+                hashes: Vec::new(),
+                enabled: true,
+                required_dependencies: Some(
+                    dependencies
+                        .iter()
+                        .map(|project_id| ProjectRef {
+                            provider: ProviderId::Modrinth,
+                            project_id: (*project_id).into(),
+                        })
+                        .collect(),
+                ),
+            }
+        };
+        let mods = vec![
+            entry("alpha", "Mod Alpha", InstallReason::Requested, &["library"]),
+            entry("beta", "Mod\nBeta", InstallReason::Requested, &["core"]),
+            entry("library", "Library", InstallReason::Required, &["core"]),
+            entry("core", "Core", InstallReason::Required, &[]),
+        ];
+
+        assert_eq!(
+            render_mod_list(&mods),
+            concat!(
+                "alpha.jar (Mod Alpha)\r\n",
+                "beta.jar (Mod Beta)\r\n",
+                "core.jar (Core) (DEPENDÊNCIA DE: Mod Alpha, Mod Beta)\r\n",
+                "library.jar (Library) (DEPENDÊNCIA DE: Mod Alpha)\r\n",
+            )
+        );
+    }
+
+    #[test]
+    fn dependency_annotations_tolerate_cycles() {
+        let dependency = |project_id: &str| ProjectRef {
+            provider: ProviderId::Modrinth,
+            project_id: project_id.into(),
+        };
+        let entry = |project_id: &str, depends_on: &str| InstalledMod {
+            provider: ProviderId::Modrinth,
+            project_id: project_id.into(),
+            name: project_id.to_uppercase(),
+            version_id: "version".into(),
+            version_number: "1".into(),
+            filename: format!("{project_id}.jar"),
+            installed_at: String::new(),
+            reason: InstallReason::Required,
+            hashes: Vec::new(),
+            enabled: true,
+            required_dependencies: Some(vec![dependency(depends_on)]),
+        };
+
+        let output = render_mod_list(&[entry("a", "b"), entry("b", "a")]);
+        assert!(output.contains("a.jar (A) (DEPENDÊNCIA DE: B)"));
+        assert!(output.contains("b.jar (B) (DEPENDÊNCIA DE: A)"));
     }
 
     #[tokio::test]

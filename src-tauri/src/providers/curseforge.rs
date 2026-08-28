@@ -125,7 +125,7 @@ impl CurseForgeProvider {
         Ok(Self {
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(20))
-                .user_agent("mosaic-modpack-studio/0.12.0 (tauri; rust)")
+                .user_agent("mosaic-modpack-studio/0.13.0 (tauri; rust)")
                 .build()?,
             secrets,
         })

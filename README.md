@@ -27,6 +27,7 @@ Aplicativo desktop local-first, construído com **Rust + Tauri 2 + React**, para
 - separação revisável dos mods em Cliente, Servidor, Cliente e Servidor e Não classificados;
 - remoção conservadora que preserva qualquer dependência ainda referenciada por outro mod instalado;
 - identifica na lista quais mods utilizam cada dependência, inclusive em cadeias transitivas;
+- gera uma lista TXT que anota em cada dependência quais mods principais precisam dela;
 - predefinições reutilizáveis que verificam versões compatíveis e resolvem todas as dependências em lote;
 - chave da CurseForge guardada no cofre de credenciais do sistema operacional;
 - frontend sem acesso direto ao sistema de arquivos ou aos segredos;
