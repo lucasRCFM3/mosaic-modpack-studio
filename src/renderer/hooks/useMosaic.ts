@@ -7,6 +7,7 @@ import type {
   InstallProgress,
   ModOrganizationAssignment,
   ModOrganizationPlan,
+  RescanProfilePlan,
   ModPreset,
   ModpackProfile,
   ProjectRef,
@@ -54,6 +55,9 @@ export function useMosaic() {
   const [organizationPlan, setOrganizationPlan] = useState<ModOrganizationPlan>();
   const [classifyingMods, setClassifyingMods] = useState(false);
   const [organizingMods, setOrganizingMods] = useState(false);
+  const [rescanningProfile, setRescanningProfile] = useState(false);
+  const [rescanPlan, setRescanPlan] = useState<RescanProfilePlan>();
+  const [applyingRescan, setApplyingRescan] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'success' | 'error' | 'info'; text: string }>();
 
   const currentProfile = useMemo(
@@ -86,6 +90,7 @@ export function useMosaic() {
     if (!currentProfile) return;
     localStorage.setItem('mosaic:last-profile', currentProfile.id);
     setOrganizationPlan(undefined);
+    setRescanPlan(undefined);
     setFilters((current) => ({ ...current, ...currentProfile.target }));
   }, [currentProfile?.id]);
 
@@ -143,6 +148,38 @@ export function useMosaic() {
     const updated = await window.mosaic.profiles.update(id, input);
     setProfiles((current) => current.map((profile) => profile.id === updated.id ? updated : profile));
     setNotice({ tone: 'success', text: 'Dados do modpack atualizados.' });
+  };
+
+  const previewProfileRescan = async () => {
+    if (!currentProfile) return;
+    setRescanningProfile(true);
+    try {
+      const result = await window.mosaic.profiles.rescanPreview(currentProfile.id);
+      if (result) setRescanPlan(result);
+    } catch (error) {
+      setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível analisar a pasta.' });
+    } finally {
+      setRescanningProfile(false);
+    }
+  };
+
+  const applyProfileRescan = async (planId: string): Promise<boolean> => {
+    if (!currentProfile) return false;
+    setApplyingRescan(true);
+    try {
+      const result = await window.mosaic.profiles.rescanApply(currentProfile.id, planId);
+      setProfiles((current) => current.map((profile) => profile.id === result.profile.id ? result.profile : profile));
+      setRescanPlan(undefined);
+      const localText = result.localOnly ? ` ${result.localOnly} ficaram como arquivos locais.` : '';
+      const warningText = result.warnings.length ? ` ${result.warnings.length} aviso${result.warnings.length === 1 ? '' : 's'} durante a leitura.` : '';
+      setNotice({ tone: result.localOnly || result.warnings.length ? 'info' : 'success', text: `Modpack substituído: ${result.scannedFiles} arquivos encontrados e ${result.recognized} reconhecidos em Modrinth/CurseForge.${localText}${warningText}` });
+      return true;
+    } catch (error) {
+      setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível substituir o modpack.' });
+      return false;
+    } finally {
+      setApplyingRescan(false);
+    }
   };
 
   const resolveProject = async (project: ProjectSummary) => {
@@ -360,8 +397,9 @@ export function useMosaic() {
   return {
     profiles, currentProfile, presets, settings, gameVersions, filters, setFilters, catalog, searching,
     resolvingKey, resolvingPresetId, resolvingBatch, plan, setPlan, installing, updatingPlan, progress, notice, setNotice, installedKeys,
-    organizationPlan, setOrganizationPlan, classifyingMods, organizingMods,
+    organizationPlan, setOrganizationPlan, classifyingMods, organizingMods, rescanningProfile,
+    rescanPlan, setRescanPlan, applyingRescan,
     queuedProjects, queuedKeys,
-    chooseProfile, createProfile, duplicateProfile, updateProfile, removeProfile, savePreset, removePreset, resolvePreset, resolveProject, addToInstallQueue, removeFromInstallQueue, clearInstallQueue, resolveInstallQueue, toggleOptionalDependency, setAllOptionalDependencies, installPlan, removeMod, saveSettings, exportProfile, exportModList, previewModOrganization, exportModOrganization,
+    chooseProfile, createProfile, duplicateProfile, updateProfile, previewProfileRescan, applyProfileRescan, removeProfile, savePreset, removePreset, resolvePreset, resolveProject, addToInstallQueue, removeFromInstallQueue, clearInstallQueue, resolveInstallQueue, toggleOptionalDependency, setAllOptionalDependencies, installPlan, removeMod, saveSettings, exportProfile, exportModList, previewModOrganization, exportModOrganization,
   };
 }

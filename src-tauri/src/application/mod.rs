@@ -7,4 +7,5 @@ pub mod presets;
 pub mod profiles;
 mod provider_fallback;
 pub mod removal;
+pub mod rescan;
 pub mod resolver;

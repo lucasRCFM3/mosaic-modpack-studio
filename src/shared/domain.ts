@@ -1,5 +1,6 @@
 export const PROVIDERS = ['modrinth', 'curseforge'] as const;
-export type ProviderId = (typeof PROVIDERS)[number];
+export type RemoteProviderId = (typeof PROVIDERS)[number];
+export type ProviderId = RemoteProviderId | 'local';
 
 export const LOADERS = ['fabric', 'forge', 'neoforge', 'quilt'] as const;
 export type ModLoader = (typeof LOADERS)[number];
@@ -15,7 +16,7 @@ export interface ProfileTarget {
 
 export interface SearchFilters extends ProfileTarget {
   query: string;
-  providers: ProviderId[];
+  providers: RemoteProviderId[];
   side: 'any' | ProjectSide;
   sort: 'relevance' | 'downloads' | 'updated' | 'newest';
   limit?: number;
@@ -78,7 +79,7 @@ export interface CatalogSearchResult {
   projects: ProjectSummary[];
   total: number;
   warnings: string[];
-  providers: Record<ProviderId, { enabled: boolean; ok: boolean; message?: string }>;
+  providers: Record<RemoteProviderId, { enabled: boolean; ok: boolean; message?: string }>;
 }
 
 export interface ResolutionNode {
@@ -212,6 +213,27 @@ export interface DuplicateProfileResult {
   profile: ModpackProfile;
   copiedFiles: number;
   copiedBytes: number;
+}
+
+export interface RescanProfilePlan {
+  id: string;
+  profileId: string;
+  instancePath: string;
+  previousTarget: ProfileTarget;
+  detectedTarget: ProfileTarget;
+  detectionSource: string;
+  scannedFiles: number;
+  recognized: number;
+  localOnly: number;
+  warnings: string[];
+}
+
+export interface RescanProfileResult {
+  profile: ModpackProfile;
+  scannedFiles: number;
+  recognized: number;
+  localOnly: number;
+  warnings: string[];
 }
 
 export type OrganizationClassificationSource = 'provider' | 'crossProvider' | 'unknown';

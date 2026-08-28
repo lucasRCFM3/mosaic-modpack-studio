@@ -48,6 +48,38 @@ pub async fn profiles_update(
 }
 
 #[tauri::command]
+pub async fn profiles_rescan_preview(
+    state: State<'_, AppState>,
+    profile_id: String,
+) -> Result<Option<RescanProfilePlan>, String> {
+    validate_uuid(&profile_id)?;
+    let Some(folder) = rfd::AsyncFileDialog::new()
+        .set_title("Escolha a instância ou a pasta mods para rescanear")
+        .pick_folder()
+        .await
+    else {
+        return Ok(None);
+    };
+    state
+        .rescan
+        .preview(&profile_id, folder.path())
+        .await
+        .message()
+        .map(Some)
+}
+
+#[tauri::command]
+pub async fn profiles_rescan_apply(
+    state: State<'_, AppState>,
+    profile_id: String,
+    plan_id: String,
+) -> Result<RescanProfileResult, String> {
+    validate_uuid(&profile_id)?;
+    validate_uuid(&plan_id)?;
+    state.rescan.apply(&profile_id, &plan_id).await.message()
+}
+
+#[tauri::command]
 pub async fn profiles_remove(state: State<'_, AppState>, profile_id: String) -> Result<(), String> {
     validate_uuid(&profile_id)?;
     state.profiles.remove(&profile_id).await.message()
@@ -279,6 +311,9 @@ pub async fn mods_open_project(
     project: ProjectRef,
 ) -> Result<(), String> {
     validate_project(&project)?;
+    if !project.provider.is_remote() {
+        return Err("Este é um arquivo local importado; não há página oficial registrada.".into());
+    }
     let url = state
         .providers
         .get(project.provider)

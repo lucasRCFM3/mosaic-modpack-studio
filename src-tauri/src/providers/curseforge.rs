@@ -26,6 +26,21 @@ struct ListEnvelope<T> {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct FingerprintEnvelope {
+    data: FingerprintData,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FingerprintData {
+    exact_matches: Vec<FingerprintMatch>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FingerprintMatch {
+    file: RawFile,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Pagination {
     total_count: u64,
 }
@@ -110,7 +125,7 @@ impl CurseForgeProvider {
         Ok(Self {
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(20))
-                .user_agent("mosaic-modpack-studio/0.11.1 (tauri; rust)")
+                .user_agent("mosaic-modpack-studio/0.12.0 (tauri; rust)")
                 .build()?,
             secrets,
         })
@@ -133,6 +148,44 @@ impl CurseForgeProvider {
             .header("Accept", "application/json")
             .header("Accept-Encoding", "identity")
             .query(query)
+            .send()
+            .await?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(AppError::Message(format!(
+                "CurseForge respondeu HTTP {status}: {}",
+                body.chars().take(180).collect::<String>()
+            )));
+        }
+        let body = response.bytes().await?;
+        let mut deserializer = serde_json::Deserializer::from_slice(&body);
+        serde_path_to_error::deserialize(&mut deserializer).map_err(|error| {
+            AppError::Message(format!(
+                "A CurseForge enviou uma resposta incompatível no campo `{}`: {}",
+                error.path(),
+                error.inner()
+            ))
+        })
+    }
+
+    async fn post_json<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: serde_json::Value,
+    ) -> AppResult<T> {
+        let key = self.secrets.get_curseforge_key()?.ok_or_else(|| {
+            AppError::Message(
+                "Configure sua chave da CurseForge em Ajustes para usar este catálogo.".into(),
+            )
+        })?;
+        let response = self
+            .client
+            .post(format!("{BASE_URL}{path}"))
+            .header("x-api-key", key)
+            .header("Accept", "application/json")
+            .header("Accept-Encoding", "identity")
+            .json(&body)
             .send()
             .await?;
         let status = response.status();
@@ -205,7 +258,7 @@ impl CurseForgeProvider {
         }
     }
 
-    fn version_from_raw(&self, value: RawFile, loader: ModLoader) -> ProjectVersion {
+    fn version_from_raw(&self, value: RawFile, loaders: Vec<ModLoader>) -> ProjectVersion {
         ProjectVersion {
             provider: ProviderId::Curseforge,
             project_id: value.mod_id.to_string(),
@@ -213,7 +266,7 @@ impl CurseForgeProvider {
             name: value.display_name.clone(),
             version_number: value.display_name,
             minecraft_versions: value.game_versions,
-            loaders: vec![loader],
+            loaders,
             channel: channel_from_id(value.release_type),
             published_at: value.file_date,
             downloads: value.download_count.unwrap_or_default(),
@@ -341,13 +394,41 @@ impl ModProvider for CurseForgeProvider {
         Ok(files
             .into_iter()
             .next()
-            .map(|file| self.version_from_raw(file, target.loader)))
+            .map(|file| self.version_from_raw(file, vec![target.loader])))
     }
 
     async fn get_version_by_id(&self, _version_id: &str) -> AppResult<ProjectVersion> {
         Err(AppError::Message(
             "A CurseForge exige o ID do projeto junto com o arquivo.".into(),
         ))
+    }
+
+    async fn get_version_by_hash(
+        &self,
+        _hash: Option<&FileHash>,
+        fingerprint: Option<u32>,
+    ) -> AppResult<Option<ProjectVersion>> {
+        let Some(fingerprint) = fingerprint else {
+            return Ok(None);
+        };
+        let response: FingerprintEnvelope = self
+            .post_json(
+                "fingerprints",
+                serde_json::json!({ "fingerprints": [fingerprint] }),
+            )
+            .await?;
+        Ok(response
+            .data
+            .exact_matches
+            .into_iter()
+            .next()
+            .map(|matched| {
+                let mut file = matched.file;
+                let loaders = loaders_from_game_versions(&file.game_versions);
+                file.game_versions
+                    .retain(|value| loader_from_name(value).is_none());
+                self.version_from_raw(file, loaders)
+            }))
     }
 
     async fn project_url(&self, project_id: &str) -> AppResult<String> {
@@ -371,6 +452,29 @@ fn loader_from_id(id: u8) -> Option<ModLoader> {
         6 => Some(ModLoader::Neoforge),
         _ => None,
     }
+}
+fn loader_from_name(value: &str) -> Option<ModLoader> {
+    match value
+        .trim()
+        .to_lowercase()
+        .replace(['-', '_', ' '], "")
+        .as_str()
+    {
+        "forge" => Some(ModLoader::Forge),
+        "fabric" => Some(ModLoader::Fabric),
+        "quilt" => Some(ModLoader::Quilt),
+        "neoforge" => Some(ModLoader::Neoforge),
+        _ => None,
+    }
+}
+fn loaders_from_game_versions(values: &[String]) -> Vec<ModLoader> {
+    let mut loaders: Vec<_> = values
+        .iter()
+        .filter_map(|value| loader_from_name(value))
+        .collect();
+    loaders.sort_by_key(|loader| loader.as_str());
+    loaders.dedup();
+    loaders
 }
 fn channel_from_id(id: u8) -> ReleaseChannel {
     match id {
@@ -447,6 +551,15 @@ mod tests {
 
         assert_eq!(parsed.data[0].latest_files_indexes[0].mod_loader, 0);
         assert_eq!(parsed.data[0].latest_files_indexes[1].mod_loader, 4);
+    }
+
+    #[test]
+    fn extracts_loader_labels_from_fingerprint_results() {
+        assert_eq!(
+            loaders_from_game_versions(&["1.20.1".into(), "NeoForge".into()]),
+            vec![ModLoader::Neoforge]
+        );
+        assert!(loader_from_name("1.20.1").is_none());
     }
 
     #[test]

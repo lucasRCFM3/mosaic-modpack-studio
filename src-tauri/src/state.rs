@@ -2,7 +2,7 @@ use crate::{
     application::{
         catalog::CatalogService, download::DownloadManager, organization::ModOrganizationService,
         presets::PresetService, profiles::ProfileService, removal::DependencyRemovalService,
-        resolver::DependencyResolver,
+        rescan::ProfileRescanService, resolver::DependencyResolver,
     },
     error::AppResult,
     infrastructure::{secrets::SecretStore, store::JsonStore},
@@ -21,6 +21,7 @@ pub struct AppState {
     pub downloads: Arc<DownloadManager>,
     pub organization: Arc<ModOrganizationService>,
     pub removal: Arc<DependencyRemovalService>,
+    pub rescan: Arc<ProfileRescanService>,
     pub providers: Arc<ProviderRegistry>,
 }
 
@@ -49,6 +50,10 @@ impl AppState {
             profiles.clone(),
             providers.clone(),
         ));
+        let rescan = Arc::new(ProfileRescanService::new(
+            profiles.clone(),
+            providers.clone(),
+        ));
         Ok(Self {
             store,
             secrets,
@@ -59,6 +64,7 @@ impl AppState {
             downloads,
             organization,
             removal,
+            rescan,
             providers,
         })
     }

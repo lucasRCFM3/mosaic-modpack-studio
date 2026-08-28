@@ -23,6 +23,7 @@ Aplicativo desktop local-first, construído com **Rust + Tauri 2 + React**, para
 - downloads concorrentes por HTTPS, arquivo `.part`, verificação de hash e renomeação;
 - perfis independentes com nome e descrição editáveis, registro dos mods e lockfile JSON exportável;
 - duplicação transacional de modpacks, com cópia completa ou uma nova instância somente com os mods registrados;
+- importação e reindexação de instâncias existentes, com prévia e detecção automática de Minecraft e loader;
 - separação revisável dos mods em Cliente, Servidor, Cliente e Servidor e Não classificados;
 - remoção conservadora que preserva qualquer dependência ainda referenciada por outro mod instalado;
 - identifica na lista quais mods utilizam cada dependência, inclusive em cadeias transitivas;
@@ -63,6 +64,14 @@ A cópia é montada em uma pasta temporária e o perfil novo só aparece depois 
 Em **Meu modpack → Separar mods**, o Mosaic consulta o ambiente informado pelo provedor original. Quando a CurseForge não possui essa informação, ele procura com verificação de identidade o projeto equivalente na Modrinth. A tela de revisão permite pesquisar e corrigir manualmente qualquer classificação antes de gerar quatro pastas: `Cliente`, `Servidor`, `Cliente e Servidor` e `Não classificados`.
 
 Por segurança, a função **copia** os JARs para uma exportação organizada e preserva a pasta `mods/` ativa. Colocar segundas cópias dentro dela poderia fazer o loader carregar mods duplicados ou deixar de encontrá-los em subpastas. O destino inclui um `manifesto.txt`, nunca sobrescreve uma exportação existente e não pode ficar dentro da pasta ativa de mods.
+
+## Importar ou substituir uma instância
+
+Em **Meu modpack → Rescanear pasta**, escolha a raiz de uma instância que contenha `mods/` ou selecione a própria pasta `mods`. O Mosaic analisa tudo primeiro e exibe uma prévia com o caminho, Minecraft, loader, arquivos reconhecidos, arquivos locais e avisos. O perfil só é substituído depois da confirmação; as pastas antiga e nova não são apagadas nem movidas.
+
+A detecção prioriza `minecraftinstance.json` do CurseForge, `mmc-pack.json` e `instance.cfg` do Prism/MultiMC, além de perfis JSON do Modrinth e outros launchers. Quando esses arquivos não bastam, o Mosaic combina os metadados internos `fabric.mod.json`, `quilt.mod.json`, `mods.toml` e `neoforge.mods.toml` com a identificação por hash na Modrinth e fingerprint na CurseForge.
+
+Mods reconhecidos recuperam nome, versão, origem, hashes e dependências obrigatórias. JARs sem correspondência continuam registrados como **Local**, portanto aparecem na lista, no TXT e na separação por ambiente. Quando a evidência não é suficiente para detectar todo o alvo, a prévia informa quais campos foram mantidos do perfil anterior.
 
 ## Predefinições de mods
 

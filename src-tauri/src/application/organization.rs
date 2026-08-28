@@ -149,6 +149,13 @@ async fn classify_mod(
     target: &ProfileTarget,
     installed: InstalledMod,
 ) -> StoredOrganizationItem {
+    if !installed.provider.is_remote() {
+        return organization_item(
+            installed,
+            ProjectSide::Unknown,
+            OrganizationClassificationSource::Unknown,
+        );
+    }
     let provider = providers.get(installed.provider);
     if provider.is_enabled() {
         if let Ok(side) = provider.get_version_side(&installed.version_id).await {
@@ -338,7 +345,7 @@ async fn write_organized_export(
     }
     manifest_entries.sort_by_key(|entry| entry.to_lowercase());
     let manifest = format!(
-        "Mosaic Modpack Studio 0.11.1\r\nModpack: {}\r\nMinecraft: {} · {}\r\nGerado em: {}\r\nArquivos ignorados: {}\r\n\r\n{}{}\r\n",
+        "Mosaic Modpack Studio 0.12.0\r\nModpack: {}\r\nMinecraft: {} · {}\r\nGerado em: {}\r\nArquivos ignorados: {}\r\n\r\n{}{}\r\n",
         profile.name,
         profile.target.minecraft_version,
         profile.target.loader.as_str(),

@@ -27,6 +27,13 @@ pub trait ModProvider: Send + Sync {
         version_id: Option<&str>,
     ) -> AppResult<Option<ProjectVersion>>;
     async fn get_version_by_id(&self, version_id: &str) -> AppResult<ProjectVersion>;
+    async fn get_version_by_hash(
+        &self,
+        _hash: Option<&FileHash>,
+        _fingerprint: Option<u32>,
+    ) -> AppResult<Option<ProjectVersion>> {
+        Ok(None)
+    }
     async fn get_version_side(&self, _version_id: &str) -> AppResult<ProjectSide> {
         Ok(ProjectSide::Unknown)
     }
@@ -55,13 +62,16 @@ impl ProviderRegistry {
         match id {
             ProviderId::Modrinth => self.modrinth.clone(),
             ProviderId::Curseforge => self.curseforge.clone(),
+            ProviderId::Local => {
+                panic!("mods locais não possuem provedor remoto")
+            }
         }
     }
 
     pub fn alternate_id(id: ProviderId) -> ProviderId {
         match id {
             ProviderId::Modrinth => ProviderId::Curseforge,
-            ProviderId::Curseforge => ProviderId::Modrinth,
+            ProviderId::Curseforge | ProviderId::Local => ProviderId::Modrinth,
         }
     }
 

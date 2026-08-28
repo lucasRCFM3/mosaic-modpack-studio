@@ -171,6 +171,9 @@ async fn direct_required_dependencies(
     target: &ProfileTarget,
     item: &InstalledMod,
 ) -> AppResult<Vec<ProjectRef>> {
+    if !item.provider.is_remote() {
+        return Ok(Vec::new());
+    }
     let provider = providers.get(item.provider);
     let project = provider.get_project(&item.project_id).await?;
     let mut version = provider

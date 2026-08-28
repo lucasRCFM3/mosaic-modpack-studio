@@ -6,6 +6,7 @@ use std::collections::HashMap;
 pub enum ProviderId {
     Modrinth,
     Curseforge,
+    Local,
 }
 
 impl ProviderId {
@@ -13,7 +14,12 @@ impl ProviderId {
         match self {
             Self::Modrinth => "modrinth",
             Self::Curseforge => "curseforge",
+            Self::Local => "local",
         }
+    }
+
+    pub fn is_remote(self) -> bool {
+        !matches!(self, Self::Local)
     }
 }
 
@@ -432,6 +438,31 @@ pub struct DuplicateProfileResult {
     pub profile: ModpackProfile,
     pub copied_files: u64,
     pub copied_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RescanProfilePlan {
+    pub id: String,
+    pub profile_id: String,
+    pub instance_path: String,
+    pub previous_target: ProfileTarget,
+    pub detected_target: ProfileTarget,
+    pub detection_source: String,
+    pub scanned_files: usize,
+    pub recognized: usize,
+    pub local_only: usize,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RescanProfileResult {
+    pub profile: ModpackProfile,
+    pub scanned_files: usize,
+    pub recognized: usize,
+    pub local_only: usize,
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

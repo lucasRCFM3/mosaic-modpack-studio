@@ -25,6 +25,8 @@ pub fn run() {
             profiles_create,
             profiles_duplicate,
             profiles_update,
+            profiles_rescan_preview,
+            profiles_rescan_apply,
             profiles_remove,
             profiles_choose_folder,
             profiles_export,

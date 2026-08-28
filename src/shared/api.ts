@@ -13,6 +13,8 @@ import type {
   ModpackProfile,
   ProjectRef,
   RemoveModResult,
+  RescanProfilePlan,
+  RescanProfileResult,
   ResolutionPlan,
   SaveSettingsInput,
   SearchFilters,
@@ -30,6 +32,8 @@ export interface MosaicApi {
     create(input: CreateProfileInput): Promise<ModpackProfile>;
     duplicate(profileId: string, input: DuplicateProfileInput): Promise<DuplicateProfileResult>;
     update(profileId: string, input: UpdateProfileInput): Promise<ModpackProfile>;
+    rescanPreview(profileId: string): Promise<RescanProfilePlan | undefined>;
+    rescanApply(profileId: string, planId: string): Promise<RescanProfileResult>;
     remove(profileId: string): Promise<void>;
     chooseFolder(): Promise<string | undefined>;
     export(profileId: string): Promise<string | undefined>;

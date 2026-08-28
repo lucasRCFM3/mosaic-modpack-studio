@@ -214,6 +214,49 @@ impl ProfileService {
             .await?
     }
 
+    pub async fn replace_scanned_instance(
+        &self,
+        id: &str,
+        instance_path: &Path,
+        target: ProfileTarget,
+        mods: Vec<InstalledMod>,
+        expected_updated_at: &str,
+    ) -> AppResult<ModpackProfile> {
+        let _operation = self.file_operations.lock().await;
+        let instance_path = tokio::fs::canonicalize(instance_path)
+            .await
+            .map_err(|error| {
+                AppError::Message(format!("A pasta escolhida não pôde ser acessada: {error}"))
+            })?;
+        let mods_path = instance_path.join("mods");
+        if !tokio::fs::metadata(&mods_path).await?.is_dir() {
+            return Err(AppError::Message(
+                "A pasta escolhida precisa conter uma pasta mods válida.".into(),
+            ));
+        }
+        validate_destination_is_unused(&self.store, id, &instance_path).await?;
+        validate_target(&target)?;
+        self.store
+            .update(|database| {
+                let profile = database
+                    .profiles
+                    .iter_mut()
+                    .find(|profile| profile.id == id)
+                    .ok_or_else(|| AppError::Message("Perfil não encontrado.".into()))?;
+                if profile.updated_at != expected_updated_at {
+                    return Err(AppError::Message(
+                        "O modpack mudou enquanto a pasta era analisada. Faça uma nova análise antes de substituir.".into(),
+                    ));
+                }
+                profile.instance_path = instance_path.to_string_lossy().into_owned();
+                profile.target = target;
+                profile.mods = mods;
+                profile.updated_at = Utc::now().to_rfc3339();
+                Ok(profile.clone())
+            })
+            .await?
+    }
+
     pub async fn remove(&self, id: &str) -> AppResult<()> {
         self.store
             .update(|database| database.profiles.retain(|profile| profile.id != id))
@@ -362,7 +405,7 @@ impl ProfileService {
         }
         let lockfile = Lockfile {
             format_version: 1,
-            generated_by: "Mosaic Modpack Studio 0.11.1",
+            generated_by: "Mosaic Modpack Studio 0.12.0",
             generated_at: Utc::now().to_rfc3339(),
             profile: self.get(id).await?,
         };

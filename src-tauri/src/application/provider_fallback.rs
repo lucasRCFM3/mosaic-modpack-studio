@@ -21,6 +21,9 @@ pub async fn find_equivalent_project(
     target_provider: ProviderId,
     require_download: bool,
 ) -> Option<(ProjectSummary, ProjectVersion)> {
+    if !target_provider.is_remote() {
+        return None;
+    }
     let provider = providers.get(target_provider);
     if !provider.is_enabled() {
         return None;
@@ -73,6 +76,7 @@ pub fn provider_label(provider: ProviderId) -> &'static str {
     match provider {
         ProviderId::Modrinth => "Modrinth",
         ProviderId::Curseforge => "CurseForge",
+        ProviderId::Local => "Local",
     }
 }
 

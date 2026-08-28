@@ -93,7 +93,7 @@ struct RawDependency {
 impl ModrinthProvider {
     pub fn new() -> AppResult<Self> {
         let client = reqwest::Client::builder()
-            .user_agent("mosaic-modpack-studio/0.11.1 (tauri; rust)")
+            .user_agent("mosaic-modpack-studio/0.12.0 (tauri; rust)")
             .timeout(std::time::Duration::from_secs(20))
             .build()?;
         Ok(Self { client })
@@ -332,6 +332,45 @@ impl ModProvider for ModrinthProvider {
             .get(&format!("version/{}", urlencoding(version_id)), &[])
             .await?;
         Ok(self.version_from_raw(version))
+    }
+
+    async fn get_version_by_hash(
+        &self,
+        hash: Option<&FileHash>,
+        _fingerprint: Option<u32>,
+    ) -> AppResult<Option<ProjectVersion>> {
+        let Some(hash) = hash
+            .filter(|hash| matches!(hash.algorithm, HashAlgorithm::Sha1 | HashAlgorithm::Sha512))
+        else {
+            return Ok(None);
+        };
+        let algorithm = match hash.algorithm {
+            HashAlgorithm::Sha1 => "sha1",
+            HashAlgorithm::Sha512 => "sha512",
+            HashAlgorithm::Md5 => return Ok(None),
+        };
+        let response = self
+            .client
+            .get(format!(
+                "{BASE_URL}version_file/{}",
+                urlencoding(&hash.value)
+            ))
+            .query(&[("algorithm", algorithm)])
+            .send()
+            .await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(AppError::Message(format!(
+                "Modrinth respondeu HTTP {status}: {}",
+                truncate(&body)
+            )));
+        }
+        let version: RawVersion = response.json().await?;
+        Ok(Some(self.version_from_raw(version)))
     }
 
     async fn get_version_side(&self, version_id: &str) -> AppResult<ProjectSide> {

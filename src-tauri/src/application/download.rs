@@ -407,6 +407,7 @@ fn validate_download_url(value: &str, provider: ProviderId) -> AppResult<()> {
         ProviderId::Curseforge => {
             host.ends_with(".forgecdn.net") || host.ends_with(".curseforge.com")
         }
+        ProviderId::Local => false,
     };
     if !allowed {
         return Err(AppError::Message(format!(
