@@ -243,7 +243,11 @@ impl RecommendationService {
         Ok(feed)
     }
 
-    pub async fn preview(&self, recommendation_id: &str) -> AppResult<RecommendedPackDetails> {
+    pub async fn preview(
+        &self,
+        recommendation_id: &str,
+        desired_mod_count: Option<u16>,
+    ) -> AppResult<RecommendedPackDetails> {
         let candidate =
             if let Some(candidate) = self.candidates.read().await.get(recommendation_id).cloned() {
                 candidate
@@ -272,7 +276,12 @@ impl RecommendationService {
                     .await
             }
             CandidateSource::Mosaic { recipe_id } => {
-                self.preview_mosaic(candidate.pack, recipe_id).await
+                self.preview_mosaic(
+                    candidate.pack,
+                    recipe_id,
+                    desired_mod_count.unwrap_or(30) as usize,
+                )
+                .await
             }
         }
     }
@@ -329,6 +338,7 @@ impl RecommendationService {
         &self,
         pack: RecommendedPack,
         recipe_id: &'static str,
+        desired_mod_count: usize,
     ) -> AppResult<RecommendedPackDetails> {
         let target = pack.target.clone().ok_or_else(|| {
             AppError::Message("A coleção Mosaic não possui um destino definido.".into())
@@ -337,13 +347,59 @@ impl RecommendationService {
         let mut projects = Vec::new();
         let mut warnings = Vec::new();
         let mut seen = HashSet::new();
-        for query in queries {
-            match self.find_recipe_project(query, &target).await {
-                Some(project) if seen.insert(project_key(&project)) => projects.push(project),
-                Some(_) => {}
-                None => warnings.push(format!(
-                    "{query} não possui uma versão compatível nesse destino e foi ignorado."
-                )),
+        let mut seen_names = HashSet::new();
+        let mut unavailable: Vec<String> = Vec::new();
+        for query_chunk in queries.chunks(8) {
+            let target_ref = &target;
+            let owned_queries = query_chunk
+                .iter()
+                .map(|query| (*query).to_string())
+                .collect::<Vec<_>>();
+            let mut results = stream::iter(owned_queries.into_iter().enumerate())
+                .map(|(index, query)| async move {
+                    let result = self.find_recipe_project(&query, target_ref).await;
+                    (index, query, result)
+                })
+                .buffer_unordered(6)
+                .collect::<Vec<_>>()
+                .await;
+            results.sort_by_key(|(index, _, _)| *index);
+            for (_, query, result) in results {
+                match result {
+                    Some(project)
+                        if seen.insert(project_key(&project))
+                            && seen_names.insert(normalize(&project.name)) =>
+                    {
+                        projects.push(project)
+                    }
+                    Some(_) => {}
+                    None => unavailable.push(query),
+                }
+                if projects.len() >= desired_mod_count {
+                    break;
+                }
+            }
+            if projects.len() >= desired_mod_count {
+                break;
+            }
+        }
+        if projects.len() < desired_mod_count {
+            for term in recipe_discovery_terms(recipe_id) {
+                let candidates = self.search_recipe_candidates(term, &target).await;
+                for project in candidates {
+                    if is_user_facing_project(&project)
+                        && seen.insert(project_key(&project))
+                        && seen_names.insert(normalize(&project.name))
+                    {
+                        projects.push(project);
+                    }
+                    if projects.len() >= desired_mod_count {
+                        break;
+                    }
+                }
+                if projects.len() >= desired_mod_count {
+                    break;
+                }
             }
         }
         if projects.is_empty() {
@@ -351,12 +407,40 @@ impl RecommendationService {
                 "Nenhum mod desta coleção está disponível para o destino escolhido.".into(),
             ));
         }
+        if !unavailable.is_empty() {
+            let shown = unavailable
+                .iter()
+                .take(5)
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            let remaining = unavailable.len().saturating_sub(shown.len());
+            warnings.push(if remaining > 0 {
+                format!(
+                    "{} itens do núcleo curado não estavam disponíveis nesse destino: {} e mais {remaining}.",
+                    unavailable.len(),
+                    shown.join(", ")
+                )
+            } else {
+                format!(
+                    "Alguns itens do núcleo curado não estavam disponíveis nesse destino: {}.",
+                    shown.join(", ")
+                )
+            });
+        }
+        if projects.len() < desired_mod_count {
+            warnings.push(format!(
+                "A coleção encontrou {} dos {desired_mod_count} mods principais solicitados para Minecraft {} + {}.",
+                projects.len(),
+                target.minecraft_version,
+                target.loader.as_str()
+            ));
+        }
         projects.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
         Ok(RecommendedPackDetails {
             pack,
             target,
             source_file_count: projects.len(),
-            unresolved_file_count: warnings.len(),
+            unresolved_file_count: unavailable.len(),
             projects,
             has_overrides: false,
             warnings,
@@ -379,23 +463,63 @@ impl RecommendationService {
             limit: Some(8),
         };
         let modrinth = self.providers.get(ProviderId::Modrinth);
+        if let Ok(result) = modrinth.search(&filters).await
+            && let Some(project) = best_recipe_match(query, result.projects)
+        {
+            return Some(project);
+        }
         let curseforge = self.providers.get(ProviderId::Curseforge);
-        let (left, right) = tokio::join!(modrinth.search(&filters), async {
+        if !curseforge.is_enabled() {
+            return None;
+        }
+        curseforge
+            .search(&filters)
+            .await
+            .ok()
+            .and_then(|result| best_recipe_match(query, result.projects))
+    }
+
+    async fn search_recipe_candidates(
+        &self,
+        query: &str,
+        target: &ProfileTarget,
+    ) -> Vec<ProjectSummary> {
+        let filters = SearchFilters {
+            query: query.into(),
+            minecraft_version: target.minecraft_version.clone(),
+            loader: target.loader,
+            release_channels: target.release_channels.clone(),
+            providers: vec![ProviderId::Modrinth, ProviderId::Curseforge],
+            side: SearchSide::Any,
+            sort: SearchSort::Downloads,
+            limit: Some(20),
+        };
+        let modrinth = self.providers.get(ProviderId::Modrinth);
+        let curseforge = self.providers.get(ProviderId::Curseforge);
+        let (modrinth_result, curseforge_result) = tokio::join!(modrinth.search(&filters), async {
             if curseforge.is_enabled() {
                 curseforge.search(&filters).await.ok()
             } else {
                 None
             }
         });
-        let mut choices = left.ok().map(|result| result.projects).unwrap_or_default();
-        if let Some(result) = right {
-            choices.extend(result.projects);
+        let mut projects = modrinth_result
+            .ok()
+            .map(|result| result.projects)
+            .unwrap_or_default();
+        if let Some(result) = curseforge_result {
+            projects.extend(result.projects);
         }
-        choices.sort_by_key(|project| recipe_score(query, project));
-        choices
-            .into_iter()
-            .find(|project| recipe_score(query, project).0 < 3)
+        projects.sort_by(|left, right| right.downloads.cmp(&left.downloads));
+        projects
     }
+}
+
+fn best_recipe_match(query: &str, mut projects: Vec<ProjectSummary>) -> Option<ProjectSummary> {
+    projects.sort_by_key(|project| recipe_score(query, project));
+    projects
+        .into_iter()
+        .find(|project| recipe_score(query, project).0 < 3)
 }
 
 fn recipe_queries(recipe_id: &str, loader: ModLoader) -> Vec<&'static str> {
@@ -403,35 +527,127 @@ fn recipe_queries(recipe_id: &str, loader: ModLoader) -> Vec<&'static str> {
     match recipe_id {
         "performance" => vec![
             if fabric_family { "Sodium" } else { "Embeddium" },
+            if fabric_family {
+                "Iris Shaders"
+            } else {
+                "Oculus"
+            },
             "Lithium",
             "FerriteCore",
             "ImmediatelyFast",
             "Entity Culling",
             "ModernFix",
+            "Dynamic FPS",
+            "Memory Leak Fix",
+            "BadOptimizations",
+            "Clumps",
+            "Alternate Current",
+            "FastQuit",
+            "Smooth Boot",
+            "More Culling",
+            "Enhanced Block Entities",
+            "Let Me Despawn",
+            "spark",
+            "Chunky",
+            "ServerCore",
+            "Fast IP Ping",
+            "Better Biome Blend",
+            "LazyDFU",
+            "Krypton",
         ],
         "magic-machines" if fabric_family => vec![
             "Modern Industrialization",
+            "Tech Reborn",
+            "Applied Energistics 2",
             "Botania",
             "Spectrum",
+            "Bewitchment",
+            "Create Fabric",
+            "CC Tweaked",
+            "Tom's Simple Storage Mod",
+            "Iron Chests",
+            "Traveler's Backpack",
+            "Waystones",
+            "Artifacts",
+            "Mythic Metals",
+            "Ad Astra",
+            "Powah",
+            "Patchouli",
             "Farmer's Delight Refabricated",
             "EMI",
             "Jade",
+            "AppleSkin",
+            "Mouse Tweaks",
+            "Nature's Compass",
+            "Comforts",
         ],
         "magic-machines" => vec![
             "Create",
             "Ars Nouveau",
             "Applied Energistics 2",
+            "Mekanism",
+            "Thermal Expansion",
+            "Immersive Engineering",
+            "Industrial Foregoing",
+            "Botania",
+            "Occultism",
+            "Iron's Spells 'n Spellbooks",
+            "Blood Magic",
+            "PneumaticCraft Repressurized",
+            "Powah",
+            "Flux Networks",
+            "Pipez",
+            "Sophisticated Storage",
+            "Sophisticated Backpacks",
+            "Storage Drawers",
+            "CC Tweaked",
+            "Create Crafts & Additions",
+            "Create Steam 'n' Rails",
             "Farmer's Delight",
             "Just Enough Items",
             "Jade",
+            "Waystones",
+            "Patchouli",
         ],
         "exploration" => vec![
             "Waystones",
             "YUNG's Better Dungeons",
             "YUNG's Better Strongholds",
+            "YUNG's Better Mineshafts",
+            "YUNG's Better Desert Temples",
+            "YUNG's Better Nether Fortresses",
+            "When Dungeons Arise",
+            "Towns and Towers",
+            "Repurposed Structures",
+            "Dungeon Crawl",
+            "Terralith",
+            "Tectonic",
+            if fabric_family {
+                "BetterNether"
+            } else {
+                "Biomes O' Plenty"
+            },
+            if fabric_family {
+                "BetterEnd"
+            } else {
+                "The Aether"
+            },
+            "Regions Unexplored",
+            "Deeper and Darker",
+            "End Remastered",
+            "Naturalist",
+            "Friends&Foes",
+            "Simply Swords",
+            "Better Combat",
+            "Artifacts",
+            "Lootr",
             "Nature's Compass",
             "Explorer's Compass",
             "Xaero's Minimap",
+            "Xaero's World Map",
+            "Traveler's Backpack",
+            "Small Ships",
+            "Goblin Traders",
         ],
         "quality" => vec![
             if fabric_family {
@@ -444,23 +660,137 @@ fn recipe_queries(recipe_id: &str, loader: ModLoader) -> Vec<&'static str> {
             "Mouse Tweaks",
             "ShulkerBoxTooltip",
             "Controlling",
+            "Inventory Profiles Next",
+            "BetterF3",
+            "Better Advancements",
+            "Crafting Tweaks",
+            "Carry On",
+            "Light Overlay",
+            "Enchantment Descriptions",
+            "Legendary Tooltips",
+            "Not Enough Animations",
+            "Eating Animation",
+            "3D Skin Layers",
+            "Presence Footsteps",
+            "Sound Physics Remastered",
+            "Falling Leaves",
+            "Polymorph",
+            "TrashSlot",
+            "Comforts",
+            "Easy Magic",
+            "Easy Anvils",
+            "Chat Heads",
+            if fabric_family {
+                "Zoomify"
+            } else {
+                "Just Zoom"
+            },
+            "Pick Up Notifier",
+            "Advancement Plaques",
+            "Better Third Person",
+            "Xaero's Minimap",
+            "Xaero's World Map",
         ],
         "storage-tech" if fabric_family => vec![
             "Applied Energistics 2",
             "Modern Industrialization",
+            "Tech Reborn",
             "Tom's Simple Storage Mod",
             "Iron Chests",
+            "Storage Drawers",
+            "Simple Copper Pipes",
+            "Create Fabric",
+            "CC Tweaked",
+            "Powah",
+            "Ad Astra",
+            "Industrial Revolution",
+            "Traveler's Backpack",
+            "Dank Storage",
+            "Functional Storage",
+            "Inventory Profiles Next",
+            "Mouse Tweaks",
+            "Jade",
             "EMI",
         ],
         "storage-tech" => vec![
             "Applied Energistics 2",
             "Mekanism",
             "Sophisticated Storage",
+            "Sophisticated Backpacks",
+            "Storage Drawers",
+            "Functional Storage",
             "Iron Chests",
+            "Refined Storage",
+            "Tom's Simple Storage Mod",
+            "Create",
+            "Thermal Expansion",
+            "Industrial Foregoing",
+            "Immersive Engineering",
+            "Powah",
+            "Flux Networks",
+            "Pipez",
+            "Iron Furnaces",
+            "Dank Storage",
+            "CC Tweaked",
+            "RFTools Utility",
+            "Extreme Reactors",
+            "Ender IO",
+            "Inventory Sorter",
+            "Jade",
             "Just Enough Items",
         ],
         _ => Vec::new(),
     }
+}
+
+fn recipe_discovery_terms(recipe_id: &str) -> &'static [&'static str] {
+    match recipe_id {
+        "performance" => &[
+            "performance optimization",
+            "fps optimization",
+            "memory performance",
+            "server performance",
+            "render optimization",
+        ],
+        "magic-machines" => &[
+            "magic technology",
+            "automation machines",
+            "create addon",
+            "magic adventure",
+            "technology energy",
+        ],
+        "exploration" => &[
+            "adventure exploration",
+            "world generation biomes",
+            "dungeons structures",
+            "dimensions exploration",
+            "mobs bosses",
+        ],
+        "quality" => &[
+            "quality of life",
+            "inventory utility",
+            "interface hud",
+            "map minimap",
+            "building utility",
+        ],
+        "storage-tech" => &[
+            "storage automation",
+            "technology energy",
+            "item transport pipes",
+            "machines factory",
+            "computer storage",
+        ],
+        _ => &[],
+    }
+}
+
+fn is_user_facing_project(project: &ProjectSummary) -> bool {
+    !project.categories.iter().any(|category| {
+        matches!(
+            normalize(category).as_str(),
+            "library" | "apiandlibrary" | "libraryapi"
+        )
+    })
 }
 
 fn recipe_score(query: &str, project: &ProjectSummary) -> (u8, std::cmp::Reverse<u64>) {
@@ -549,6 +879,10 @@ mod tests {
             "Embeddium"
         );
         assert!(recipe_queries("magic-machines", ModLoader::Forge).contains(&"Create"));
+        for recipe in RECIPES {
+            assert!(recipe_queries(recipe.id, ModLoader::Forge).len() >= 19);
+            assert!(recipe_discovery_terms(recipe.id).len() >= 5);
+        }
     }
 
     #[test]
@@ -597,7 +931,7 @@ mod tests {
             .find(|pack| pack.provider == Some(ProviderId::Modrinth))
             .unwrap();
 
-        let details = service.preview(&pack.id).await.unwrap();
+        let details = service.preview(&pack.id, None).await.unwrap();
 
         assert!(!details.projects.is_empty());
         assert!(details.source_file_count >= details.projects.len());
@@ -629,9 +963,49 @@ mod tests {
             .find(|pack| pack.provider == Some(ProviderId::Curseforge))
             .unwrap();
 
-        let details = service.preview(&pack.id).await.unwrap();
+        let details = service.preview(&pack.id, None).await.unwrap();
 
         assert!(!details.projects.is_empty());
         assert!(!details.target.minecraft_version.is_empty());
+    }
+
+    #[tokio::test]
+    #[ignore = "consulta os catálogos públicos para montar uma coleção grande"]
+    async fn live_mosaic_collection_reaches_the_requested_size() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Arc::new(
+            JsonStore::load(directory.path().join("state.json"))
+                .await
+                .unwrap(),
+        );
+        let providers = Arc::new(ProviderRegistry::new(Arc::new(SecretStore::new())).unwrap());
+        let service = RecommendationService::new(providers, store);
+        let target = ProfileTarget {
+            minecraft_version: "1.20.1".into(),
+            loader: ModLoader::Forge,
+            release_channels: vec![ReleaseChannel::Release, ReleaseChannel::Beta],
+        };
+        let feed = service
+            .feed(RecommendationScope::CurrentProfile, Some(target), 0)
+            .await
+            .unwrap();
+        let pack = feed
+            .packs
+            .into_iter()
+            .find(|pack| pack.kind == RecommendedPackKind::Mosaic)
+            .unwrap();
+
+        let details = service.preview(&pack.id, Some(60)).await.unwrap();
+
+        assert_eq!(details.projects.len(), 60);
+        assert_eq!(
+            details
+                .projects
+                .iter()
+                .map(|project| normalize(&project.name))
+                .collect::<HashSet<_>>()
+                .len(),
+            60
+        );
     }
 }

@@ -39,11 +39,15 @@ pub async fn recommendations_feed(
 pub async fn recommendations_preview(
     state: State<'_, AppState>,
     recommendation_id: String,
+    desired_mod_count: Option<u16>,
 ) -> Result<RecommendedPackDetails, String> {
     validate_uuid(&recommendation_id)?;
+    if desired_mod_count.is_some_and(|count| !(10..=60).contains(&count)) {
+        return Err("Escolha entre 10 e 60 mods principais para a coleção Mosaic.".into());
+    }
     state
         .recommendations
-        .preview(&recommendation_id)
+        .preview(&recommendation_id, desired_mod_count)
         .await
         .message()
 }

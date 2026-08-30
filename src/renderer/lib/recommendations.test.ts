@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RecommendationFeed } from '../../shared/domain';
-import { addRecommendationFeed, feedMatches, loadRecommendationHistory } from './recommendations';
+import { addRecommendationFeed, feedMatches, loadRecommendationHistory, parseCollectionSize } from './recommendations';
 
 const feed = (id: string, scope: RecommendationFeed['scope'] = 'allVersions'): RecommendationFeed => ({
   id,
@@ -27,5 +27,11 @@ describe('recommendation history', () => {
   it('matches current-profile snapshots by version and loader', () => {
     expect(feedMatches(feed('one', 'currentProfile'), 'currentProfile', { minecraftVersion: '1.20.1', loader: 'forge', releaseChannels: ['beta'] })).toBe(true);
     expect(feedMatches(feed('one', 'currentProfile'), 'currentProfile', { minecraftVersion: '1.20.1', loader: 'fabric', releaseChannels: ['release'] })).toBe(false);
+  });
+
+  it('uses 30 mods by default and accepts only supported collection sizes', () => {
+    expect(parseCollectionSize(null)).toBe(30);
+    expect(parseCollectionSize('45')).toBe(45);
+    expect(parseCollectionSize('31')).toBe(30);
   });
 });

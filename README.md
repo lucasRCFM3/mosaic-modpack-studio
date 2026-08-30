@@ -30,7 +30,7 @@ Aplicativo desktop local-first, construído com **Rust + Tauri 2 + React**, para
 - gera uma lista TXT que anota em cada dependência quais mods principais precisam dela;
 - predefinições reutilizáveis que verificam versões compatíveis e resolvem todas as dependências em lote;
 - descoberta de modpacks oficiais da Modrinth e CurseForge, com leitura dos manifests `.mrpack` e CurseForge;
-- coleções Mosaic adaptadas ao Minecraft e loader atuais, pesquisa interna, seleção parcial e histórico de recomendações;
+- coleções Mosaic de 15, 30, 45 ou 60 mods principais, adaptadas ao Minecraft e loader atuais, com pesquisa interna, seleção parcial e histórico;
 - chave da CurseForge guardada no cofre de credenciais do sistema operacional;
 - frontend sem acesso direto ao sistema de arquivos ou aos segredos;
 - instalador NSIS nativo para Windows.
@@ -88,9 +88,9 @@ Abra **Predefinições → Nova predefinição**. Você pode pesquisar projetos 
 
 ## Modpacks recomendados
 
-Abra **Modpacks** para alternar entre sugestões compatíveis com o perfil atual e inspirações de qualquer versão. Cada rodada mistura projetos oficiais publicados nos catálogos com coleções modulares criadas pelo Mosaic. O histórico das últimas rodadas fica disponível mesmo depois de reiniciar o aplicativo.
+Abra **Modpacks** para alternar entre sugestões compatíveis com o perfil atual e inspirações de qualquer versão. Cada rodada mistura projetos oficiais publicados nos catálogos com coleções modulares criadas pelo Mosaic. O histórico das últimas rodadas fica disponível mesmo depois de reiniciar o aplicativo. O seletor **Tamanho Mosaic** oferece 15, 30, 45 ou 60 mods principais e lembra a última escolha; o padrão é 30.
 
-Ao abrir uma sugestão, o Mosaic lê o manifesto oficial, identifica os projetos, permite pesquisar e selecionar somente os mods desejados e marca os que já estão instalados. A seleção pode ser adicionada ao perfil atual quando Minecraft e loader coincidem ou usada para criar um perfil separado com o destino correto. Em ambos os casos, o resolvedor normal recalcula dependências obrigatórias, opcionais e conflitos antes de instalar.
+Ao abrir uma sugestão, o Mosaic lê o manifesto oficial, identifica os projetos, permite pesquisar e selecionar somente os mods desejados e marca os que já estão instalados. Nas coleções próprias, um núcleo curado por tema é complementado por projetos populares da mesma categoria até alcançar o tamanho solicitado, sempre filtrando o destino e removendo bibliotecas e duplicatas. A seleção pode ser adicionada ao perfil atual quando Minecraft e loader coincidem ou usada para criar um perfil separado com o destino correto. Em ambos os casos, o resolvedor normal recalcula dependências obrigatórias, opcionais e conflitos antes de instalar.
 
 Essa ação é deliberadamente uma **importação modular dos mods**. Configurações, scripts, resource packs e pastas `overrides` são detectados e informados, mas ainda não são copiados; portanto, criar um perfil “baseado no pack” não é apresentado como uma cópia exata do modpack oficial.
 

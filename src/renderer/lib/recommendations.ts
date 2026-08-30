@@ -1,6 +1,12 @@
 import type { ProfileTarget, RecommendationFeed, RecommendationScope } from '../../shared/domain';
 
 export const recommendationHistoryStorageKey = 'mosaic:recommendation-history:v1';
+export const collectionSizes = [15, 30, 45, 60] as const;
+
+export function parseCollectionSize(raw: string | null): number {
+  const parsed = Number(raw);
+  return collectionSizes.some((size) => size === parsed) ? parsed : 30;
+}
 
 export function loadRecommendationHistory(raw: string | null): RecommendationFeed[] {
   if (!raw) return [];

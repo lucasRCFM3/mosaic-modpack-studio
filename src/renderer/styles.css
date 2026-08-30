@@ -734,6 +734,10 @@ body { font-size: 15px; }
 .recommendation-search svg { width: 19px; color: #809176; }
 .recommendation-search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 13px; }
 .recommendation-history { display: flex; align-items: stretch; gap: 7px; }
+.recommendation-size { min-width: 142px; display: grid; align-content: center; gap: 4px; padding: 8px 11px; border: 1px solid #30382c; border-radius: 8px; background: #171c16; }
+.recommendation-size > span { color: #7e8977; font-size: 12px; font-weight: 800; letter-spacing: .04em; }
+.recommendation-size select { min-height: 24px; border: 0; outline: 0; background: transparent; color: #e2e8dd; font-size: 14px; font-weight: 750; cursor: pointer; }
+.recommendation-size option { background: #1b2119; color: #d7ded0; }
 .recommendation-history > .icon-button { width: 36px; height: auto; border: 1px solid #30382c; border-radius: 8px; background: #171c16; }
 .recommendation-history > .icon-button:first-child svg { transform: rotate(180deg); }
 .recommendation-history > span { min-width: 61px; display: flex; align-items: baseline; justify-content: center; gap: 3px; padding: 12px 6px; border: 1px solid #30382c; border-radius: 8px; color: #7d8777; font-size: 11px; }

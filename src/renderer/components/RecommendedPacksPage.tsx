@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ModpackProfile, RecommendationFeed, RecommendationScope } from '../../shared/domain';
-import { feedMatches } from '../lib/recommendations';
+import { feedMatches, parseCollectionSize } from '../lib/recommendations';
 import { Icon } from './Icon';
 
 const downloads = (value: number) => value >= 1_000_000
@@ -24,11 +24,13 @@ export function RecommendedPacksPage({
   loadingId?: string;
   onLoad: (scope: RecommendationScope, force?: boolean) => void;
   onSelectFeed: (id: string) => void;
-  onPreview: (id: string) => void;
+  onPreview: (id: string, desiredModCount: number) => void;
 }) {
   const [scope, setScope] = useState<RecommendationScope>('currentProfile');
   const [query, setQuery] = useState('');
+  const [collectionSize, setCollectionSize] = useState(() => parseCollectionSize(localStorage.getItem('mosaic:collection-size')));
   useEffect(() => { onLoad(scope); }, [scope, profile?.id]);
+  useEffect(() => { localStorage.setItem('mosaic:collection-size', String(collectionSize)); }, [collectionSize]);
   const matchingHistory = useMemo(
     () => history.filter((item) => feedMatches(item, scope, profile?.target)),
     [history, scope, profile?.target.minecraftVersion, profile?.target.loader],
@@ -59,6 +61,7 @@ export function RecommendedPacksPage({
       </div>
       <label className="recommendation-search"><Icon name="search"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Pesquisar nas sugestões desta rodada…"/></label>
       <div className="recommendation-history">
+        <label className="recommendation-size"><span>TAMANHO MOSAIC</span><select value={collectionSize} onChange={(event) => setCollectionSize(Number(event.target.value))}><option value={15}>15 mods</option><option value={30}>30 mods</option><option value={45}>45 mods</option><option value={60}>60 mods</option></select></label>
         <button className="icon-button" title="Rodada mais recente" disabled={activeIndex <= 0} onClick={() => onSelectFeed(matchingHistory[activeIndex - 1]?.id)}><Icon name="chevron"/></button>
         <span><strong>{matchingHistory.length ? activeIndex + 1 : 0}</strong> de {matchingHistory.length}<small>histórico</small></span>
         <button className="icon-button next" title="Rodada anterior" disabled={activeIndex < 0 || activeIndex >= matchingHistory.length - 1} onClick={() => onSelectFeed(matchingHistory[activeIndex + 1]?.id)}><Icon name="chevron"/></button>
@@ -69,25 +72,26 @@ export function RecommendedPacksPage({
     {feed?.warnings.length ? <div className="recommendation-warning"><Icon name="alert"/><span>{feed.warnings.join(' ')}</span></div> : null}
     {loading && !feed ? <div className="empty-state compact"><span className="spinner"/><h3>Buscando boas ideias…</h3><p>Consultando os catálogos e combinando com o seu destino.</p></div> : null}
 
-    {mosaic.length ? <RecommendationSection title="Coleções Mosaic" description="Receitas modulares adaptadas à versão e ao loader escolhidos." packs={mosaic} loadingId={loadingId} onPreview={onPreview}/> : null}
-    {official.length ? <RecommendationSection title="Modpacks oficiais" description="Projetos publicados por seus autores na Modrinth e CurseForge." packs={official} loadingId={loadingId} onPreview={onPreview}/> : null}
+    {mosaic.length ? <RecommendationSection title="Coleções Mosaic" description={`Receitas modulares com até ${collectionSize} mods principais, adaptadas à versão e ao loader.`} packs={mosaic} loadingId={loadingId} collectionSize={collectionSize} onPreview={onPreview}/> : null}
+    {official.length ? <RecommendationSection title="Modpacks oficiais" description="Projetos publicados por seus autores na Modrinth e CurseForge." packs={official} loadingId={loadingId} collectionSize={collectionSize} onPreview={onPreview}/> : null}
     {!loading && feed && !filtered.length ? <div className="empty-state compact"><span><Icon name="search"/></span><h3>Nenhuma sugestão com esse termo</h3><p>Limpe a pesquisa ou gere uma nova rodada.</p></div> : null}
   </section>;
 }
 
-function RecommendationSection({ title, description, packs, loadingId, onPreview }: {
+function RecommendationSection({ title, description, packs, loadingId, collectionSize, onPreview }: {
   title: string;
   description: string;
   packs: RecommendationFeed['packs'];
   loadingId?: string;
-  onPreview: (id: string) => void;
+  collectionSize: number;
+  onPreview: (id: string, desiredModCount: number) => void;
 }) {
   return <section className="recommendation-section">
     <header><div><h2>{title}</h2><p>{description}</p></div><span>{packs.length} sugest{packs.length === 1 ? 'ão' : 'ões'}</span></header>
     <div className="recommendation-grid">{packs.map((pack) => <article className={`recommendation-card ${pack.kind}`} key={pack.id}>
       <div className="recommendation-cover">{pack.iconUrl ? <img src={pack.iconUrl} alt=""/> : <Icon name={pack.kind === 'mosaic' ? 'sparkles' : 'package'}/>}<span>{pack.kind === 'mosaic' ? 'COLEÇÃO MOSAIC' : pack.provider === 'modrinth' ? 'MODRINTH' : 'CURSEFORGE'}</span></div>
       <div className="recommendation-card-body"><small>{pack.reason}</small><h3>{pack.name}</h3><p>{pack.summary || 'Abra para conhecer os mods desta seleção.'}</p><div className="recommendation-tags">{pack.tags.slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}</div></div>
-      <footer><span>{pack.kind === 'official' ? <><Icon name="download"/>{downloads(pack.downloads)} downloads</> : <><Icon name="shield"/>Curadoria compatível</>}</span><button className="button secondary" disabled={loadingId === pack.id} onClick={() => onPreview(pack.id)}>{loadingId === pack.id ? <span className="spinner"/> : <Icon name="external"/>} Ver mods</button></footer>
+      <footer><span>{pack.kind === 'official' ? <><Icon name="download"/>{downloads(pack.downloads)} downloads</> : <><Icon name="shield"/>Até {collectionSize} mods + dependências</>}</span><button className="button secondary" disabled={loadingId === pack.id} onClick={() => onPreview(pack.id, collectionSize)}>{loadingId === pack.id ? <span className="spinner"/> : <Icon name="external"/>} Ver mods</button></footer>
     </article>)}</div>
   </section>;
 }

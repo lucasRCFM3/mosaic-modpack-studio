@@ -65,7 +65,7 @@ Uma predefinição guarda referências estáveis de projetos e nomes para aprese
 
 ### Recomendações e manifests oficiais
 
-O `RecommendationService` combina buscas de projetos do tipo modpack nos dois provedores com receitas Mosaic resolvidas dinamicamente para um `ProfileTarget`. Cada item recebe um UUID, e a origem necessária para reconstruir sua prévia permanece no backend e na persistência local; o renderer não fornece manifests ou URLs arbitrárias.
+O `RecommendationService` combina buscas de projetos do tipo modpack nos dois provedores com receitas Mosaic resolvidas dinamicamente para um `ProfileTarget`. Cada item recebe um UUID, e a origem necessária para reconstruir sua prévia permanece no backend e na persistência local; o renderer não fornece manifests ou URLs arbitrárias. Coleções próprias aceitam de 10 a 60 raízes: primeiro resolvem um núcleo ordenado de projetos curados e depois completam o tamanho com buscas temáticas populares, filtrando bibliotecas e deduplicando nome e identidade entre provedores. Consultas exatas usam Modrinth primeiro e CurseForge como fallback; o núcleo é processado em lotes com concorrência limitada.
 
 Para packs Modrinth, o adaptador baixa o `.mrpack` com limite de tamanho, lê somente `modrinth.index.json`, identifica arquivos em `mods/` por SHA-1 através do endpoint em lote e detecta overrides. Para packs CurseForge, lê `manifest.json` do ZIP oficial e extrai os pares de projeto/arquivo. A prévia normaliza tudo para `ProjectSummary`; ao confirmar uma seleção, os projetos voltam ao resolvedor normal, que escolhe versões compatíveis e recalcula o grafo completo.
 

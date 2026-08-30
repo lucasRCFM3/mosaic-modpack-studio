@@ -280,10 +280,10 @@ export function useMosaic() {
     }
   };
 
-  const previewRecommendation = async (recommendationId: string) => {
+  const previewRecommendation = async (recommendationId: string, desiredModCount: number) => {
     setLoadingRecommendationId(recommendationId);
     try {
-      setRecommendationDetails(await window.mosaic.recommendations.preview(recommendationId));
+      setRecommendationDetails(await window.mosaic.recommendations.preview(recommendationId, desiredModCount));
     } catch (error) {
       setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível ler esse modpack.' });
     } finally {

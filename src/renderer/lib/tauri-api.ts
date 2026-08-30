@@ -15,7 +15,7 @@ export const mosaicApi: MosaicApi = {
   },
   recommendations: {
     feed: (profileId, scope, seed) => call('recommendations_feed', { profileId, scope, seed }),
-    preview: (recommendationId) => call('recommendations_preview', { recommendationId }),
+    preview: (recommendationId, desiredModCount) => call('recommendations_preview', { recommendationId, desiredModCount }),
   },
   profiles: {
     list: () => call('profiles_list'),

@@ -32,7 +32,7 @@ export interface MosaicApi {
   };
   recommendations: {
     feed(profileId: string | undefined, scope: RecommendationScope, seed: number): Promise<RecommendationFeed>;
-    preview(recommendationId: string): Promise<RecommendedPackDetails>;
+    preview(recommendationId: string, desiredModCount?: number): Promise<RecommendedPackDetails>;
   };
   profiles: {
     list(): Promise<ModpackProfile[]>;
