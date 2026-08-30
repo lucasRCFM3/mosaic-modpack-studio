@@ -12,6 +12,7 @@ Comandos Tauri
   ├── CatalogService ───────► ProviderRegistry ─► Modrinth / CurseForge
   ├── DependencyResolver ───► reconciliação entre fontes + grafo + plano imutável
   ├── PresetService ────────► coleções reutilizáveis de projetos
+  ├── RecommendationService ► feeds persistentes + manifests oficiais
   ├── DownloadManager ──────► HTTPS + hash + mods/
   └── ProfileService ───────► JSON local + lockfile
 ```
@@ -62,6 +63,14 @@ A exportação revalida o plano e copia somente nomes de arquivos registrados e 
 
 Uma predefinição guarda referências estáveis de projetos e nomes para apresentação, nunca URLs ou arquivos de uma versão específica. Ao aplicá-la, todos os projetos entram como raízes do mesmo `ResolveContext`. Isso permite escolher versões adequadas ao perfil atual, deduplicar dependências compartilhadas e produzir um único plano atômico. Qualquer raiz incompatível gera um erro e impede a instalação parcial do lote.
 
+### Recomendações e manifests oficiais
+
+O `RecommendationService` combina buscas de projetos do tipo modpack nos dois provedores com receitas Mosaic resolvidas dinamicamente para um `ProfileTarget`. Cada item recebe um UUID, e a origem necessária para reconstruir sua prévia permanece no backend e na persistência local; o renderer não fornece manifests ou URLs arbitrárias.
+
+Para packs Modrinth, o adaptador baixa o `.mrpack` com limite de tamanho, lê somente `modrinth.index.json`, identifica arquivos em `mods/` por SHA-1 através do endpoint em lote e detecta overrides. Para packs CurseForge, lê `manifest.json` do ZIP oficial e extrai os pares de projeto/arquivo. A prévia normaliza tudo para `ProjectSummary`; ao confirmar uma seleção, os projetos voltam ao resolvedor normal, que escolhe versões compatíveis e recalcula o grafo completo.
+
+Os ZIPs nunca são extraídos durante a prévia. Configurações e overrides são apenas detectados, porque a ação atual é uma importação modular dos mods, não uma instalação exata do pack. Isso mantém a escrita em disco concentrada no `DownloadManager` e deixa um ponto de extensão explícito para um importador transacional futuro.
+
 ## Download e integridade
 
 O `DownloadManager` limita concorrência e aplica as seguintes proteções:
@@ -96,11 +105,11 @@ O comando `npm run check` executa:
 - testes unitários Rust;
 - build de produção do frontend.
 
-Há ainda um teste de integração ignorado por padrão que consulta a Modrinth real e confirma que opcionais permanecem fora do plano quando não selecionadas.
+Há ainda testes de integração ignorados por padrão que consultam packs reais na Modrinth e CurseForge, além do teste do resolvedor que confirma que opcionais permanecem fora do plano quando não selecionadas.
 
 ## Próximas capacidades
 
-- importação e exportação `.mrpack`, manifestos CurseForge e instâncias Prism/MultiMC;
+- importação exata e transacional de `.mrpack` e packs CurseForge, incluindo configs e overrides;
 - atualização em lote com snapshot e rollback;
 - identificação de mods existentes por hash;
 - regras de pins, overrides e presets de servidor;

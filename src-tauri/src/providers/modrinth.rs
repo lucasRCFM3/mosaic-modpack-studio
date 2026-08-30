@@ -1,10 +1,14 @@
-use super::{ModProvider, ProviderSearchResult};
+use super::{ModProvider, ProviderModpackContent, ProviderSearchResult};
 use crate::{
     domain::*,
     error::{AppError, AppResult},
 };
 use async_trait::async_trait;
 use serde::Deserialize;
+use std::{
+    collections::{HashMap, HashSet},
+    io::{Cursor, Read},
+};
 
 const BASE_URL: &str = "https://api.modrinth.com/v2/";
 
@@ -90,10 +94,35 @@ struct RawDependency {
     dependency_type: DependencyType,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MrpackIndex {
+    files: Vec<MrpackFile>,
+    dependencies: HashMap<String, String>,
+}
+
+#[derive(Deserialize)]
+struct MrpackFile {
+    path: String,
+    hashes: MrpackHashes,
+    #[serde(default)]
+    env: Option<MrpackEnvironment>,
+}
+
+#[derive(Deserialize)]
+struct MrpackHashes {
+    sha1: String,
+}
+
+#[derive(Deserialize)]
+struct MrpackEnvironment {
+    client: String,
+}
+
 impl ModrinthProvider {
     pub fn new() -> AppResult<Self> {
         let client = reqwest::Client::builder()
-            .user_agent("mosaic-modpack-studio/0.13.0 (tauri; rust)")
+            .user_agent("mosaic-modpack-studio/0.14.0 (tauri; rust)")
             .timeout(std::time::Duration::from_secs(20))
             .build()?;
         Ok(Self { client })
@@ -135,6 +164,10 @@ impl ModrinthProvider {
     }
 
     fn project_from_hit(&self, hit: SearchHit) -> ProjectSummary {
+        self.project_from_hit_with_type(hit, "mod")
+    }
+
+    fn project_from_hit_with_type(&self, hit: SearchHit, project_type: &str) -> ProjectSummary {
         ProjectSummary {
             provider: ProviderId::Modrinth,
             project_id: hit.project_id,
@@ -143,7 +176,7 @@ impl ModrinthProvider {
             summary: hit.description,
             author: hit.author,
             icon_url: hit.icon_url,
-            website_url: format!("https://modrinth.com/mod/{}", hit.slug),
+            website_url: format!("https://modrinth.com/{project_type}/{}", hit.slug),
             downloads: hit.downloads,
             updated_at: hit.date_modified,
             supported_loaders: normalize_loaders(&hit.categories),
@@ -221,6 +254,54 @@ impl ModrinthProvider {
                 })
                 .collect(),
         }
+    }
+
+    async fn download_archive(&self, url: &str) -> AppResult<Vec<u8>> {
+        let response = self.client.get(url).send().await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(AppError::Message(format!(
+                "Não foi possível baixar o índice do modpack: HTTP {status}."
+            )));
+        }
+        const MAX_ARCHIVE_SIZE: u64 = 64 * 1024 * 1024;
+        if response
+            .content_length()
+            .is_some_and(|size| size > MAX_ARCHIVE_SIZE)
+        {
+            return Err(AppError::Message(
+                "O arquivo do modpack é grande demais para a prévia (limite de 64 MB).".into(),
+            ));
+        }
+        let bytes = response.bytes().await?;
+        if bytes.len() as u64 > MAX_ARCHIVE_SIZE {
+            return Err(AppError::Message(
+                "O arquivo do modpack excedeu o limite seguro de 64 MB.".into(),
+            ));
+        }
+        Ok(bytes.to_vec())
+    }
+
+    async fn versions_by_sha1(&self, hashes: &[String]) -> AppResult<HashMap<String, RawVersion>> {
+        let mut versions = HashMap::new();
+        for chunk in hashes.chunks(100) {
+            let response = self
+                .client
+                .post(format!("{BASE_URL}version_files"))
+                .json(&serde_json::json!({ "hashes": chunk, "algorithm": "sha1" }))
+                .send()
+                .await?;
+            let status = response.status();
+            if !status.is_success() {
+                let body = response.text().await.unwrap_or_default();
+                return Err(AppError::Message(format!(
+                    "Modrinth respondeu HTTP {status} ao identificar o conteúdo: {}",
+                    truncate(&body)
+                )));
+            }
+            versions.extend(response.json::<HashMap<String, RawVersion>>().await?);
+        }
+        Ok(versions)
     }
 }
 
@@ -390,6 +471,170 @@ impl ModProvider for ModrinthProvider {
     async fn game_versions(&self) -> AppResult<Vec<String>> {
         ModrinthProvider::game_versions(self).await
     }
+
+    async fn search_modpacks(
+        &self,
+        target: Option<&ProfileTarget>,
+        offset: u32,
+        limit: u32,
+    ) -> AppResult<ProviderSearchResult> {
+        let mut facets = vec![vec!["project_type:modpack".to_string()]];
+        if let Some(target) = target {
+            facets.push(vec![format!("versions:{}", target.minecraft_version)]);
+            facets.push(vec![format!("categories:{}", target.loader.as_str())]);
+        }
+        let response: SearchResponse = self
+            .get(
+                "search",
+                &[
+                    ("facets", serde_json::to_string(&facets)?),
+                    ("index", "downloads".into()),
+                    ("offset", offset.to_string()),
+                    ("limit", limit.min(20).to_string()),
+                ],
+            )
+            .await?;
+        Ok(ProviderSearchResult {
+            total: response.total_hits,
+            projects: response
+                .hits
+                .into_iter()
+                .map(|hit| self.project_from_hit_with_type(hit, "modpack"))
+                .collect(),
+        })
+    }
+
+    async fn get_modpack_content(
+        &self,
+        project_id: &str,
+        requested_target: Option<&ProfileTarget>,
+    ) -> AppResult<ProviderModpackContent> {
+        let mut versions: Vec<RawVersion> = self
+            .get(
+                &format!("project/{}/version", urlencoding(project_id)),
+                &[("include_changelog", "false".into())],
+            )
+            .await?;
+        versions.retain(|version| {
+            requested_target.is_none_or(|target| {
+                version.game_versions.contains(&target.minecraft_version)
+                    && version
+                        .loaders
+                        .iter()
+                        .any(|loader| loader == target.loader.as_str())
+                    && target.release_channels.contains(&version.version_type)
+            })
+        });
+        versions.sort_by(|a, b| b.date_published.cmp(&a.date_published));
+        let version = versions.into_iter().next().ok_or_else(|| {
+            AppError::Message("Este modpack não possui uma versão compatível para analisar.".into())
+        })?;
+        let archive_file = version
+            .files
+            .iter()
+            .find(|file| file.primary && file.filename.ends_with(".mrpack"))
+            .or_else(|| {
+                version
+                    .files
+                    .iter()
+                    .find(|file| file.filename.ends_with(".mrpack"))
+            })
+            .ok_or_else(|| AppError::Message("A versão não contém um arquivo .mrpack.".into()))?;
+        let archive = self.download_archive(&archive_file.url).await?;
+        let (index, has_overrides) = tokio::task::spawn_blocking(move || parse_mrpack(&archive))
+            .await
+            .map_err(|error| AppError::Message(format!("Falha ao ler o modpack: {error}")))??;
+        let target = requested_target
+            .cloned()
+            .unwrap_or_else(|| target_from_mrpack(&index));
+        let mut optional_files = 0;
+        let hashes: Vec<_> = index
+            .files
+            .iter()
+            .filter(|file| file.path.replace('\\', "/").starts_with("mods/"))
+            .filter(|file| {
+                let optional = file
+                    .env
+                    .as_ref()
+                    .is_some_and(|env| env.client == "optional");
+                optional_files += usize::from(optional);
+                !file
+                    .env
+                    .as_ref()
+                    .is_some_and(|env| env.client == "unsupported")
+            })
+            .map(|file| file.hashes.sha1.clone())
+            .collect();
+        let source_file_count = hashes.len();
+        let versions = self.versions_by_sha1(&hashes).await?;
+        let mut seen = HashSet::new();
+        let projects = versions
+            .into_values()
+            .filter_map(|version| {
+                let reference = ProjectRef {
+                    provider: ProviderId::Modrinth,
+                    project_id: version.project_id,
+                };
+                seen.insert(reference.key()).then_some(reference)
+            })
+            .collect::<Vec<_>>();
+        let unresolved_file_count = source_file_count.saturating_sub(projects.len());
+        let mut warnings = Vec::new();
+        if optional_files > 0 {
+            warnings.push(format!(
+                "O pack possui {optional_files} arquivo(s) opcional(is); eles aparecem na seleção para você decidir durante a resolução."
+            ));
+        }
+        if unresolved_file_count > 0 {
+            warnings.push(format!(
+                "{unresolved_file_count} arquivo(s) do índice não puderam ser associados a um projeto público da Modrinth."
+            ));
+        }
+        Ok(ProviderModpackContent {
+            target,
+            projects,
+            source_file_count,
+            unresolved_file_count,
+            has_overrides,
+            warnings,
+        })
+    }
+}
+
+fn parse_mrpack(bytes: &[u8]) -> AppResult<(MrpackIndex, bool)> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
+        .map_err(|error| AppError::Message(format!("Arquivo .mrpack inválido: {error}")))?;
+    let has_overrides = archive.file_names().any(|name| {
+        let normalized = name.replace('\\', "/");
+        normalized.starts_with("overrides/") || normalized.starts_with("client-overrides/")
+    });
+    let mut raw = String::new();
+    archive
+        .by_name("modrinth.index.json")
+        .map_err(|_| AppError::Message("O .mrpack não contém modrinth.index.json.".into()))?
+        .read_to_string(&mut raw)?;
+    Ok((serde_json::from_str(&raw)?, has_overrides))
+}
+
+fn target_from_mrpack(index: &MrpackIndex) -> ProfileTarget {
+    let loader = if index.dependencies.contains_key("neoforge") {
+        ModLoader::Neoforge
+    } else if index.dependencies.contains_key("forge") {
+        ModLoader::Forge
+    } else if index.dependencies.contains_key("quilt-loader") {
+        ModLoader::Quilt
+    } else {
+        ModLoader::Fabric
+    };
+    ProfileTarget {
+        minecraft_version: index
+            .dependencies
+            .get("minecraft")
+            .cloned()
+            .unwrap_or_else(|| "1.20.1".into()),
+        loader,
+        release_channels: vec![ReleaseChannel::Release, ReleaseChannel::Beta],
+    }
 }
 
 fn normalize_loaders(values: &[String]) -> Vec<ModLoader> {
@@ -434,6 +679,7 @@ fn urlencoding(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn maps_modrinths_version_environments_to_export_categories() {
@@ -450,5 +696,34 @@ mod tests {
             ProjectSide::Both
         );
         assert_eq!(side_from_environment("unknown"), ProjectSide::Unknown);
+    }
+
+    #[test]
+    fn reads_the_official_mrpack_index_and_detects_overrides() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "modrinth.index.json",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+        writer
+            .write_all(br#"{"files":[{"path":"mods/example.jar","hashes":{"sha1":"abc"}}],"dependencies":{"minecraft":"1.21.1","fabric-loader":"0.16"}}"#)
+            .unwrap();
+        writer
+            .start_file(
+                "overrides/config/example.json",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+        writer.write_all(b"{}").unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+
+        let (index, has_overrides) = parse_mrpack(&bytes).unwrap();
+
+        assert!(has_overrides);
+        assert_eq!(index.files.len(), 1);
+        assert_eq!(target_from_mrpack(&index).loader, ModLoader::Fabric);
+        assert_eq!(target_from_mrpack(&index).minecraft_version, "1.21.1");
     }
 }

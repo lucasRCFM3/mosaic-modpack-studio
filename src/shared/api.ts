@@ -13,6 +13,9 @@ import type {
   ModpackProfile,
   ProjectRef,
   RemoveModResult,
+  RecommendationFeed,
+  RecommendationScope,
+  RecommendedPackDetails,
   RescanProfilePlan,
   RescanProfileResult,
   ResolutionPlan,
@@ -26,6 +29,10 @@ export interface MosaicApi {
   catalog: {
     search(filters: SearchFilters): Promise<CatalogSearchResult>;
     gameVersions(): Promise<string[]>;
+  };
+  recommendations: {
+    feed(profileId: string | undefined, scope: RecommendationScope, seed: number): Promise<RecommendationFeed>;
+    preview(recommendationId: string): Promise<RecommendedPackDetails>;
   };
   profiles: {
     list(): Promise<ModpackProfile[]>;

@@ -14,6 +14,16 @@ pub struct ProviderSearchResult {
     pub total: u64,
 }
 
+#[derive(Debug)]
+pub struct ProviderModpackContent {
+    pub target: ProfileTarget,
+    pub projects: Vec<ProjectRef>,
+    pub source_file_count: usize,
+    pub unresolved_file_count: usize,
+    pub has_overrides: bool,
+    pub warnings: Vec<String>,
+}
+
 #[async_trait]
 pub trait ModProvider: Send + Sync {
     fn id(&self) -> ProviderId;
@@ -41,6 +51,25 @@ pub trait ModProvider: Send + Sync {
     async fn game_versions(&self) -> AppResult<Vec<String>> {
         Err(crate::error::AppError::Message(
             "Este provedor não publica a lista de versões.".into(),
+        ))
+    }
+    async fn search_modpacks(
+        &self,
+        _target: Option<&ProfileTarget>,
+        _offset: u32,
+        _limit: u32,
+    ) -> AppResult<ProviderSearchResult> {
+        Err(crate::error::AppError::Message(
+            "Este provedor não oferece descoberta de modpacks.".into(),
+        ))
+    }
+    async fn get_modpack_content(
+        &self,
+        _project_id: &str,
+        _target: Option<&ProfileTarget>,
+    ) -> AppResult<ProviderModpackContent> {
+        Err(crate::error::AppError::Message(
+            "Este provedor não oferece leitura de modpacks.".into(),
         ))
     }
 }

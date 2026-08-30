@@ -6,6 +6,7 @@ pub mod organization;
 pub mod presets;
 pub mod profiles;
 mod provider_fallback;
+pub mod recommendations;
 pub mod removal;
 pub mod rescan;
 pub mod resolver;

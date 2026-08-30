@@ -1,5 +1,5 @@
 use crate::{
-    domain::{ModPreset, ModpackProfile},
+    domain::{ModPreset, ModpackProfile, StoredRecommendationCandidate},
     error::AppResult,
 };
 use serde::{Deserialize, Serialize};
@@ -27,6 +27,7 @@ impl Default for StoredSettings {
 pub struct Database {
     pub profiles: Vec<ModpackProfile>,
     pub presets: Vec<ModPreset>,
+    pub recommendation_candidates: Vec<StoredRecommendationCandidate>,
     pub settings: StoredSettings,
 }
 

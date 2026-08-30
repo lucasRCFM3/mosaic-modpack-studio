@@ -300,4 +300,42 @@ export interface SaveSettingsInput {
   downloadConcurrency: number;
 }
 
+export type RecommendationScope = 'currentProfile' | 'allVersions';
+export type RecommendedPackKind = 'official' | 'mosaic';
+
+export interface RecommendedPack {
+  id: string;
+  kind: RecommendedPackKind;
+  provider?: ProviderId;
+  name: string;
+  summary: string;
+  author: string;
+  iconUrl?: string;
+  websiteUrl?: string;
+  downloads: number;
+  updatedAt: string;
+  tags: string[];
+  reason: string;
+  target?: ProfileTarget;
+}
+
+export interface RecommendationFeed {
+  id: string;
+  generatedAt: string;
+  scope: RecommendationScope;
+  target?: ProfileTarget;
+  packs: RecommendedPack[];
+  warnings: string[];
+}
+
+export interface RecommendedPackDetails {
+  pack: RecommendedPack;
+  target: ProfileTarget;
+  projects: ProjectSummary[];
+  sourceFileCount: number;
+  unresolvedFileCount: number;
+  hasOverrides: boolean;
+  warnings: string[];
+}
+
 export const projectKey = (ref: ProjectRef): string => `${ref.provider}:${ref.projectId}`;

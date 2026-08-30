@@ -12,6 +12,9 @@ import type {
   ModpackProfile,
   ProjectRef,
   ProjectSummary,
+  RecommendationFeed,
+  RecommendationScope,
+  RecommendedPackDetails,
   ResolutionPlan,
   SaveSettingsInput,
   SavePresetInput,
@@ -20,6 +23,7 @@ import type {
 } from '../../shared/domain';
 import { setAllOptionalProjects, toggleOptionalProject } from '../lib/dependencies';
 import { addProjectToQueue, loadInstallQueues, projectKey, removeProjectFromQueue, removeProjectsFromQueue } from '../lib/install-queue';
+import { addRecommendationFeed, feedMatches, loadRecommendationHistory, recommendationHistoryStorageKey } from '../lib/recommendations';
 
 const fallbackVersions = ['1.21.8', '1.21.7', '1.21.5', '1.21.4', '1.21.1', '1.20.6', '1.20.4', '1.20.1', '1.19.2', '1.18.2', '1.16.5'];
 const installQueuesStorageKey = 'mosaic:install-queues:v1';
@@ -58,6 +62,12 @@ export function useMosaic() {
   const [rescanningProfile, setRescanningProfile] = useState(false);
   const [rescanPlan, setRescanPlan] = useState<RescanProfilePlan>();
   const [applyingRescan, setApplyingRescan] = useState(false);
+  const [recommendationHistory, setRecommendationHistory] = useState<RecommendationFeed[]>(() => loadRecommendationHistory(localStorage.getItem(recommendationHistoryStorageKey)));
+  const [activeRecommendationFeedId, setActiveRecommendationFeedId] = useState<string>();
+  const [loadingRecommendations, setLoadingRecommendations] = useState(false);
+  const [recommendationDetails, setRecommendationDetails] = useState<RecommendedPackDetails>();
+  const [loadingRecommendationId, setLoadingRecommendationId] = useState<string>();
+  const [creatingRecommendedProfile, setCreatingRecommendedProfile] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'success' | 'error' | 'info'; text: string }>();
 
   const currentProfile = useMemo(
@@ -67,8 +77,13 @@ export function useMosaic() {
   const installedKeys = useMemo(() => new Set(currentProfile?.mods.map((mod) => projectKey(mod)) ?? []), [currentProfile]);
   const queuedProjects = currentProfile ? installQueues[currentProfile.id] ?? [] : [];
   const queuedKeys = useMemo(() => new Set(queuedProjects.map(projectKey)), [queuedProjects]);
+  const activeRecommendationFeed = useMemo(
+    () => recommendationHistory.find(({ id }) => id === activeRecommendationFeedId),
+    [recommendationHistory, activeRecommendationFeedId],
+  );
 
   useEffect(() => localStorage.setItem(installQueuesStorageKey, JSON.stringify(installQueues)), [installQueues]);
+  useEffect(() => localStorage.setItem(recommendationHistoryStorageKey, JSON.stringify(recommendationHistory)), [recommendationHistory]);
 
   const refreshProfiles = useCallback(async () => {
     const loaded = await window.mosaic.profiles.list();
@@ -243,6 +258,96 @@ export function useMosaic() {
     }
   };
 
+  const loadRecommendations = async (scope: RecommendationScope, force = false) => {
+    const previous = recommendationHistory.find((feed) => feedMatches(feed, scope, currentProfile?.target));
+    if (previous && !force) {
+      setActiveRecommendationFeedId(previous.id);
+      return;
+    }
+    setLoadingRecommendations(true);
+    try {
+      const feed = await window.mosaic.recommendations.feed(
+        scope === 'currentProfile' ? currentProfile?.id : undefined,
+        scope,
+        Date.now(),
+      );
+      setRecommendationHistory((history) => addRecommendationFeed(history, feed));
+      setActiveRecommendationFeedId(feed.id);
+    } catch (error) {
+      setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível carregar as recomendações.' });
+    } finally {
+      setLoadingRecommendations(false);
+    }
+  };
+
+  const previewRecommendation = async (recommendationId: string) => {
+    setLoadingRecommendationId(recommendationId);
+    try {
+      setRecommendationDetails(await window.mosaic.recommendations.preview(recommendationId));
+    } catch (error) {
+      setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível ler esse modpack.' });
+    } finally {
+      setLoadingRecommendationId(undefined);
+    }
+  };
+
+  const resolveRecommendationForCurrentProfile = async (details: RecommendedPackDetails) => {
+    if (!currentProfile) return;
+    const sameTarget = currentProfile.target.minecraftVersion === details.target.minecraftVersion
+      && currentProfile.target.loader === details.target.loader;
+    if (!sameTarget) {
+      setNotice({ tone: 'info', text: 'Esse pack usa outra versão ou loader. Crie um modpack separado para manter tudo compatível.' });
+      return;
+    }
+    setResolvingBatch(true);
+    try {
+      const roots = details.projects.map(({ provider, projectId }) => ({ provider, projectId }));
+      let resolved = await window.mosaic.mods.resolveMany(currentProfile.id, roots, []);
+      if (settings.includeOptionalDependencies && resolved.optionalDependencies.length) {
+        resolved = await window.mosaic.mods.resolveMany(currentProfile.id, roots, resolved.optionalDependencies.map(({ project }) => project));
+      }
+      setResolutionSource({ kind: 'batch', projects: roots });
+      setPlan(resolved);
+      setRecommendationDetails(undefined);
+    } catch (error) {
+      setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível adaptar o pack ao perfil atual.' });
+    } finally {
+      setResolvingBatch(false);
+    }
+  };
+
+  const createProfileFromRecommendation = async (details: RecommendedPackDetails) => {
+    setCreatingRecommendedProfile(true);
+    try {
+      const created = await window.mosaic.profiles.create({
+        name: details.pack.name,
+        description: `Baseado em ${details.pack.name}. Mods selecionados pelo Mosaic; configs e overrides do pack oficial não foram copiados.`,
+        target: details.target,
+      });
+      const roots = details.projects.map(({ provider, projectId }) => ({ provider, projectId }));
+      let resolved: ResolutionPlan;
+      try {
+        resolved = await window.mosaic.mods.resolveMany(created.id, roots, []);
+        if (settings.includeOptionalDependencies && resolved.optionalDependencies.length) {
+          resolved = await window.mosaic.mods.resolveMany(created.id, roots, resolved.optionalDependencies.map(({ project }) => project));
+        }
+      } catch (error) {
+        await window.mosaic.profiles.remove(created.id);
+        throw error;
+      }
+      await refreshProfiles();
+      setCurrentProfileId(created.id);
+      setResolutionSource({ kind: 'batch', projects: roots });
+      setPlan(resolved);
+      setRecommendationDetails(undefined);
+      setNotice({ tone: 'info', text: `${created.name} foi criado. Revise o plano e confirme a instalação dos mods.` });
+    } catch (error) {
+      setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível criar o modpack recomendado.' });
+    } finally {
+      setCreatingRecommendedProfile(false);
+    }
+  };
+
   const updateOptionalDependencies = async (next: ProjectRef[]) => {
     if (!currentProfile || !plan || !resolutionSource) return;
     setUpdatingPlan(true);
@@ -399,7 +504,9 @@ export function useMosaic() {
     resolvingKey, resolvingPresetId, resolvingBatch, plan, setPlan, installing, updatingPlan, progress, notice, setNotice, installedKeys,
     organizationPlan, setOrganizationPlan, classifyingMods, organizingMods, rescanningProfile,
     rescanPlan, setRescanPlan, applyingRescan,
+    recommendationHistory, activeRecommendationFeed, setActiveRecommendationFeedId, loadingRecommendations,
+    recommendationDetails, setRecommendationDetails, loadingRecommendationId, creatingRecommendedProfile,
     queuedProjects, queuedKeys,
-    chooseProfile, createProfile, duplicateProfile, updateProfile, previewProfileRescan, applyProfileRescan, removeProfile, savePreset, removePreset, resolvePreset, resolveProject, addToInstallQueue, removeFromInstallQueue, clearInstallQueue, resolveInstallQueue, toggleOptionalDependency, setAllOptionalDependencies, installPlan, removeMod, saveSettings, exportProfile, exportModList, previewModOrganization, exportModOrganization,
+    chooseProfile, createProfile, duplicateProfile, updateProfile, previewProfileRescan, applyProfileRescan, removeProfile, savePreset, removePreset, resolvePreset, resolveProject, addToInstallQueue, removeFromInstallQueue, clearInstallQueue, resolveInstallQueue, loadRecommendations, previewRecommendation, resolveRecommendationForCurrentProfile, createProfileFromRecommendation, toggleOptionalDependency, setAllOptionalDependencies, installPlan, removeMod, saveSettings, exportProfile, exportModList, previewModOrganization, exportModOrganization,
   };
 }

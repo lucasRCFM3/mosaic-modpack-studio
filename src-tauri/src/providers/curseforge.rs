@@ -1,4 +1,4 @@
-use super::{ModProvider, ProviderSearchResult};
+use super::{ModProvider, ProviderModpackContent, ProviderSearchResult};
 use crate::{
     domain::*,
     error::{AppError, AppResult},
@@ -6,7 +6,11 @@ use crate::{
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Deserializer};
-use std::sync::Arc;
+use std::{
+    collections::HashSet,
+    io::{Cursor, Read},
+    sync::Arc,
+};
 
 const BASE_URL: &str = "https://api.curseforge.com/v1/";
 
@@ -120,12 +124,40 @@ struct RawDependency {
     relation_type: u8,
 }
 
+#[derive(Deserialize)]
+struct CursePackManifest {
+    minecraft: CursePackMinecraft,
+    #[serde(default)]
+    files: Vec<CursePackFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CursePackMinecraft {
+    version: String,
+    #[serde(default)]
+    mod_loaders: Vec<CursePackLoader>,
+}
+
+#[derive(Deserialize)]
+struct CursePackLoader {
+    id: String,
+    #[serde(default)]
+    primary: bool,
+}
+
+#[derive(Deserialize)]
+struct CursePackFile {
+    #[serde(rename = "projectID", alias = "projectId")]
+    project_id: u64,
+}
+
 impl CurseForgeProvider {
     pub fn new(secrets: Arc<SecretStore>) -> AppResult<Self> {
         Ok(Self {
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(20))
-                .user_agent("mosaic-modpack-studio/0.13.0 (tauri; rust)")
+                .user_agent("mosaic-modpack-studio/0.14.0 (tauri; rust)")
                 .build()?,
             secrets,
         })
@@ -308,6 +340,45 @@ impl CurseForgeProvider {
                 .collect(),
         }
     }
+
+    async fn pack_download_url(&self, project_id: &str, file: &RawFile) -> AppResult<String> {
+        if let Some(url) = file.download_url.clone() {
+            return Ok(url);
+        }
+        let response: Envelope<String> = self
+            .get(
+                &format!("mods/{project_id}/files/{}/download-url", file.id),
+                &[],
+            )
+            .await?;
+        Ok(response.data)
+    }
+
+    async fn download_pack_archive(&self, url: &str) -> AppResult<Vec<u8>> {
+        let response = self.client.get(url).send().await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(AppError::Message(format!(
+                "Não foi possível baixar o manifesto do modpack: HTTP {status}."
+            )));
+        }
+        const MAX_ARCHIVE_SIZE: u64 = 96 * 1024 * 1024;
+        if response
+            .content_length()
+            .is_some_and(|size| size > MAX_ARCHIVE_SIZE)
+        {
+            return Err(AppError::Message(
+                "O arquivo do modpack é grande demais para a prévia (limite de 96 MB).".into(),
+            ));
+        }
+        let bytes = response.bytes().await?;
+        if bytes.len() as u64 > MAX_ARCHIVE_SIZE {
+            return Err(AppError::Message(
+                "O arquivo do modpack excedeu o limite seguro de 96 MB.".into(),
+            ));
+        }
+        Ok(bytes.to_vec())
+    }
 }
 
 #[async_trait]
@@ -434,6 +505,143 @@ impl ModProvider for CurseForgeProvider {
     async fn project_url(&self, project_id: &str) -> AppResult<String> {
         Ok(self.get_project(project_id).await?.website_url)
     }
+
+    async fn search_modpacks(
+        &self,
+        target: Option<&ProfileTarget>,
+        offset: u32,
+        limit: u32,
+    ) -> AppResult<ProviderSearchResult> {
+        let mut query = vec![
+            ("gameId", "432".into()),
+            ("classId", "4471".into()),
+            ("sortField", "6".into()),
+            ("sortOrder", "desc".into()),
+            ("index", offset.to_string()),
+            ("pageSize", limit.min(20).to_string()),
+        ];
+        if let Some(target) = target {
+            query.push(("gameVersion", target.minecraft_version.clone()));
+            query.push(("modLoaderType", loader_id(target.loader).to_string()));
+        }
+        let response: ListEnvelope<RawMod> = self.get("mods/search", &query).await?;
+        let projects: Vec<_> = response
+            .data
+            .into_iter()
+            .map(|item| self.project_from_raw(item))
+            .collect();
+        Ok(ProviderSearchResult {
+            total: response
+                .pagination
+                .map(|pagination| pagination.total_count)
+                .unwrap_or(projects.len() as u64),
+            projects,
+        })
+    }
+
+    async fn get_modpack_content(
+        &self,
+        project_id: &str,
+        requested_target: Option<&ProfileTarget>,
+    ) -> AppResult<ProviderModpackContent> {
+        let mut query = vec![("pageSize", "50".into())];
+        if let Some(target) = requested_target {
+            query.push(("gameVersion", target.minecraft_version.clone()));
+        }
+        let response: ListEnvelope<RawFile> = self
+            .get(&format!("mods/{project_id}/files"), &query)
+            .await?;
+        let mut files = response.data;
+        files.retain(|file| {
+            requested_target.is_none_or(|target| {
+                target
+                    .release_channels
+                    .contains(&channel_from_id(file.release_type))
+                    && file.game_versions.contains(&target.minecraft_version)
+                    && {
+                        let loaders = loaders_from_game_versions(&file.game_versions);
+                        loaders.is_empty() || loaders.contains(&target.loader)
+                    }
+            })
+        });
+        files.sort_by(|a, b| b.file_date.cmp(&a.file_date));
+        let file = files.into_iter().next().ok_or_else(|| {
+            AppError::Message("Este modpack não possui uma versão compatível para analisar.".into())
+        })?;
+        let url = self.pack_download_url(project_id, &file).await?;
+        let archive = self.download_pack_archive(&url).await?;
+        let (manifest, has_overrides) =
+            tokio::task::spawn_blocking(move || parse_curse_pack(&archive))
+                .await
+                .map_err(|error| AppError::Message(format!("Falha ao ler o modpack: {error}")))??;
+        let target = requested_target
+            .cloned()
+            .unwrap_or_else(|| target_from_curse_pack(&manifest));
+        let source_file_count = manifest.files.len();
+        let mut seen = HashSet::new();
+        let projects = manifest
+            .files
+            .into_iter()
+            .filter_map(|entry| {
+                let reference = ProjectRef {
+                    provider: ProviderId::Curseforge,
+                    project_id: entry.project_id.to_string(),
+                };
+                seen.insert(reference.key()).then_some(reference)
+            })
+            .collect::<Vec<_>>();
+        let unresolved_file_count = source_file_count.saturating_sub(projects.len());
+        Ok(ProviderModpackContent {
+            target,
+            projects,
+            source_file_count,
+            unresolved_file_count,
+            has_overrides,
+            warnings: Vec::new(),
+        })
+    }
+}
+
+fn parse_curse_pack(bytes: &[u8]) -> AppResult<(CursePackManifest, bool)> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
+        .map_err(|error| AppError::Message(format!("Arquivo de modpack inválido: {error}")))?;
+    let has_overrides = archive.file_names().any(|name| {
+        let normalized = name.replace('\\', "/").to_lowercase();
+        normalized.starts_with("overrides/") || normalized.starts_with("client-overrides/")
+    });
+    let mut raw = String::new();
+    archive
+        .by_name("manifest.json")
+        .map_err(|_| AppError::Message("O arquivo não contém manifest.json.".into()))?
+        .read_to_string(&mut raw)?;
+    Ok((serde_json::from_str(&raw)?, has_overrides))
+}
+
+fn target_from_curse_pack(manifest: &CursePackManifest) -> ProfileTarget {
+    let loader = manifest
+        .minecraft
+        .mod_loaders
+        .iter()
+        .find(|loader| loader.primary)
+        .or_else(|| manifest.minecraft.mod_loaders.first())
+        .map(|loader| loader.id.to_lowercase())
+        .map(|loader| {
+            if loader.starts_with("neoforge-") {
+                ModLoader::Neoforge
+            } else if loader.starts_with("quilt-") {
+                ModLoader::Quilt
+            } else if loader.starts_with("fabric-") {
+                ModLoader::Fabric
+            } else {
+                ModLoader::Forge
+            }
+        })
+        .unwrap_or(ModLoader::Forge);
+    ProfileTarget {
+        minecraft_version: manifest.minecraft.version.clone(),
+        loader,
+        release_channels: vec![ReleaseChannel::Release, ReleaseChannel::Beta],
+    }
 }
 
 fn loader_id(loader: ModLoader) -> u8 {
@@ -504,6 +712,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn accepts_nullable_optional_fields_from_search() {
@@ -573,5 +782,32 @@ mod tests {
             };
 
         assert_eq!(error.path().to_string(), "data[0].id");
+    }
+
+    #[test]
+    fn reads_a_curseforge_manifest_and_its_primary_loader() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file("manifest.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        writer
+            .write_all(br#"{"minecraft":{"version":"1.20.1","modLoaders":[{"id":"forge-47.2.0","primary":true}]},"files":[{"projectID":123,"fileID":456,"required":true}]}"#)
+            .unwrap();
+        writer
+            .start_file(
+                "overrides/config/example.toml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+        writer.write_all(b"enabled=true").unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+
+        let (manifest, has_overrides) = parse_curse_pack(&bytes).unwrap();
+        let target = target_from_curse_pack(&manifest);
+
+        assert!(has_overrides);
+        assert_eq!(manifest.files[0].project_id, 123);
+        assert_eq!(target.loader, ModLoader::Forge);
+        assert_eq!(target.minecraft_version, "1.20.1");
     }
 }

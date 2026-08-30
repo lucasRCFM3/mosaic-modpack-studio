@@ -29,6 +29,8 @@ Aplicativo desktop local-first, construído com **Rust + Tauri 2 + React**, para
 - identifica na lista quais mods utilizam cada dependência, inclusive em cadeias transitivas;
 - gera uma lista TXT que anota em cada dependência quais mods principais precisam dela;
 - predefinições reutilizáveis que verificam versões compatíveis e resolvem todas as dependências em lote;
+- descoberta de modpacks oficiais da Modrinth e CurseForge, com leitura dos manifests `.mrpack` e CurseForge;
+- coleções Mosaic adaptadas ao Minecraft e loader atuais, pesquisa interna, seleção parcial e histórico de recomendações;
 - chave da CurseForge guardada no cofre de credenciais do sistema operacional;
 - frontend sem acesso direto ao sistema de arquivos ou aos segredos;
 - instalador NSIS nativo para Windows.
@@ -83,6 +85,14 @@ Abra **Predefinições → Nova predefinição**. Você pode pesquisar projetos 
 3. mostra incompatibilidades e bloqueia instalações parciais inseguras;
 4. mantém dependências opcionais desmarcadas, salvo se o usuário optar pelo contrário;
 5. instala o lote somente após confirmação do plano.
+
+## Modpacks recomendados
+
+Abra **Modpacks** para alternar entre sugestões compatíveis com o perfil atual e inspirações de qualquer versão. Cada rodada mistura projetos oficiais publicados nos catálogos com coleções modulares criadas pelo Mosaic. O histórico das últimas rodadas fica disponível mesmo depois de reiniciar o aplicativo.
+
+Ao abrir uma sugestão, o Mosaic lê o manifesto oficial, identifica os projetos, permite pesquisar e selecionar somente os mods desejados e marca os que já estão instalados. A seleção pode ser adicionada ao perfil atual quando Minecraft e loader coincidem ou usada para criar um perfil separado com o destino correto. Em ambos os casos, o resolvedor normal recalcula dependências obrigatórias, opcionais e conflitos antes de instalar.
+
+Essa ação é deliberadamente uma **importação modular dos mods**. Configurações, scripts, resource packs e pastas `overrides` são detectados e informados, mas ainda não são copiados; portanto, criar um perfil “baseado no pack” não é apresentado como uma cópia exata do modpack oficial.
 
 ## Desenvolvimento
 

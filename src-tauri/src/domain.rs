@@ -552,3 +552,82 @@ pub struct SaveSettingsInput {
     pub include_optional_dependencies: bool,
     pub download_concurrency: u8,
 }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RecommendationScope {
+    CurrentProfile,
+    AllVersions,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RecommendedPackKind {
+    Official,
+    Mosaic,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecommendedPack {
+    pub id: String,
+    pub kind: RecommendedPackKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<ProviderId>,
+    pub name: String,
+    pub summary: String,
+    pub author: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub website_url: Option<String>,
+    pub downloads: u64,
+    pub updated_at: String,
+    pub tags: Vec<String>,
+    pub reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<ProfileTarget>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecommendationFeed {
+    pub id: String,
+    pub generated_at: String,
+    pub scope: RecommendationScope,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<ProfileTarget>,
+    pub packs: Vec<RecommendedPack>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecommendedPackDetails {
+    pub pack: RecommendedPack,
+    pub target: ProfileTarget,
+    pub projects: Vec<ProjectSummary>,
+    pub source_file_count: usize,
+    pub unresolved_file_count: usize,
+    pub has_overrides: bool,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum StoredRecommendationSource {
+    Official {
+        provider: ProviderId,
+        project_id: String,
+    },
+    Mosaic {
+        recipe_id: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredRecommendationCandidate {
+    pub pack: RecommendedPack,
+    pub source: StoredRecommendationSource,
+}

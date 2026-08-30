@@ -13,6 +13,10 @@ export const mosaicApi: MosaicApi = {
     search: (filters) => call('catalog_search', { filters }),
     gameVersions: () => call('catalog_game_versions'),
   },
+  recommendations: {
+    feed: (profileId, scope, seed) => call('recommendations_feed', { profileId, scope, seed }),
+    preview: (recommendationId) => call('recommendations_preview', { recommendationId }),
+  },
   profiles: {
     list: () => call('profiles_list'),
     create: (input) => call('profiles_create', { input }),

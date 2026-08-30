@@ -15,6 +15,40 @@ pub async fn catalog_game_versions(state: State<'_, AppState>) -> Result<Vec<Str
 }
 
 #[tauri::command]
+pub async fn recommendations_feed(
+    state: State<'_, AppState>,
+    profile_id: Option<String>,
+    scope: RecommendationScope,
+    seed: u64,
+) -> Result<RecommendationFeed, String> {
+    let target = if scope == RecommendationScope::CurrentProfile {
+        let id = profile_id.ok_or_else(|| "Selecione um modpack primeiro.".to_string())?;
+        validate_uuid(&id)?;
+        Some(state.profiles.get(&id).await.message()?.target)
+    } else {
+        None
+    };
+    state
+        .recommendations
+        .feed(scope, target, seed)
+        .await
+        .message()
+}
+
+#[tauri::command]
+pub async fn recommendations_preview(
+    state: State<'_, AppState>,
+    recommendation_id: String,
+) -> Result<RecommendedPackDetails, String> {
+    validate_uuid(&recommendation_id)?;
+    state
+        .recommendations
+        .preview(&recommendation_id)
+        .await
+        .message()
+}
+
+#[tauri::command]
 pub async fn profiles_list(state: State<'_, AppState>) -> Result<Vec<ModpackProfile>, String> {
     Ok(state.profiles.list().await)
 }
@@ -262,8 +296,8 @@ pub async fn mods_resolve_many(
     if projects.is_empty() {
         return Err("Adicione pelo menos um mod à lista.".into());
     }
-    if projects.len() > 100 {
-        return Err("A lista pode conter no máximo 100 mods por instalação.".into());
+    if projects.len() > 500 {
+        return Err("A lista pode conter no máximo 500 mods por instalação.".into());
     }
     for project in &projects {
         validate_project(project)?;

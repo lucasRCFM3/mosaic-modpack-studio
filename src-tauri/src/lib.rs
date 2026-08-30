@@ -21,6 +21,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             catalog_search,
             catalog_game_versions,
+            recommendations_feed,
+            recommendations_preview,
             profiles_list,
             profiles_create,
             profiles_duplicate,

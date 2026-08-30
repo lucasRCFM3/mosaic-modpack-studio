@@ -1,8 +1,9 @@
 use crate::{
     application::{
         catalog::CatalogService, download::DownloadManager, organization::ModOrganizationService,
-        presets::PresetService, profiles::ProfileService, removal::DependencyRemovalService,
-        rescan::ProfileRescanService, resolver::DependencyResolver,
+        presets::PresetService, profiles::ProfileService, recommendations::RecommendationService,
+        removal::DependencyRemovalService, rescan::ProfileRescanService,
+        resolver::DependencyResolver,
     },
     error::AppResult,
     infrastructure::{secrets::SecretStore, store::JsonStore},
@@ -22,6 +23,7 @@ pub struct AppState {
     pub organization: Arc<ModOrganizationService>,
     pub removal: Arc<DependencyRemovalService>,
     pub rescan: Arc<ProfileRescanService>,
+    pub recommendations: Arc<RecommendationService>,
     pub providers: Arc<ProviderRegistry>,
 }
 
@@ -54,6 +56,8 @@ impl AppState {
             profiles.clone(),
             providers.clone(),
         ));
+        let recommendations =
+            Arc::new(RecommendationService::new(providers.clone(), store.clone()));
         Ok(Self {
             store,
             secrets,
@@ -65,6 +69,7 @@ impl AppState {
             organization,
             removal,
             rescan,
+            recommendations,
             providers,
         })
     }
